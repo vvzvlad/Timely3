@@ -79,15 +79,19 @@ current design is rectangle‑centric. `aplite` was dropped for RAM. See
 
 ```sh
 nix develop                      # pebble CLI + ARM toolchain + emulator
-pebble build                     # -> build/TimelyNG.pbw
+just build                       # -> build/TimelyNG.pbw   (or: make build)
 pebble install --emulator emery  # colour emulator (or basalt / diorite / flint)
 ```
+
+`just build` / `make build` run `pebble build` and then `tools/reloc-check.sh`,
+which fails the build if a packed struct emitted a misaligned relocation (that
+bug made 0.0.7 unlaunchable). A bare `pebble build` skips that gate.
 
 Build/test exactly as the cloud does (catches the `-Werror` / warnings the
 local build relaxes via `pbl_suppress_newer_gcc_warnings`):
 
 ```sh
-nix develop -c sh tools/test.sh  # host unit tests + build + strict per‑platform compile
+nix develop -c sh tools/test.sh  # host unit tests + build + reloc-check + strict per‑platform compile
 ```
 
 ## ⚙️ Configuration

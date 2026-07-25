@@ -20,11 +20,9 @@ static persist s_settings = {
   .week_format = 0, // ISO 8601
   .vibe_pat_disconnect = 2, // double vibe
   .vibe_pat_connect = 0, // no vibe
-  // MUST stay a null pointer (0). This packed field sits at an unaligned offset,
-  // so a string literal here emits a misaligned R_ARM_ABS32 relocation that the
-  // app loader rejects ("Invalid app relocation target" -> app never launches).
-  // The custom date format lives in adv_settings.custom_date_fmt; unused in C.
-  .strftime_format = 0,
+  // Layout padding only, never read in C — must not hold an address of any kind
+  // (see the packed-struct-on-flash contract in settings.h).
+  .strftime_format_reserved = {0},
   .track_battery = 0,
   .theme = 1,       // Functional
   .theme_mode = 1,  // Dark (matches the pre-theme look)

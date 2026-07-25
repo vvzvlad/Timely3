@@ -1,9 +1,11 @@
 #!/usr/bin/env sh
 # One command to gate a change the way the cloud would:
 #   1. host unit tests (pure logic: layout, calendar, suntimes, timefmt, vibes,
-#      clock-font selection)
+#      clock-font selection, and the persisted settings layout)
 #   2. pebble build (also generates the per-platform headers)
-#   3. strict-check: full compile of every source per platform with the cloud's
+#   3. reloc-check: no misaligned R_ARM_ABS32 relocation in the built ELFs (an
+#      address-valued initializer in a packed struct makes the app unlaunchable)
+#   4. strict-check: full compile of every source per platform with the cloud's
 #      exact -Werror flag set, failing on any error OR warning
 #
 # Run inside the dev shell:  nix develop -c sh tools/test.sh
@@ -20,6 +22,9 @@ rm -f "$out"
 
 echo "== pebble build =="
 pebble build >/dev/null
+
+echo "== reloc-check (packed-struct relocations) =="
+sh tools/reloc-check.sh
 
 echo "== strict-check (cloud flags) =="
 sh tools/strict-check.sh

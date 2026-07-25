@@ -5,7 +5,8 @@ pebble-screenshot*
 .*.swp
 .direnv
 
-# Local-only workflow artifacts (brainstorming specs / plans)
+# Local-only workflow artifacts (brainstorming specs / plans, agent worktrees)
 docs/superpowers/
+.claude/
 
 node_modules/
