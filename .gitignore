@@ -9,3 +9,6 @@ pebble-screenshot*
 docs/superpowers/
 
 node_modules/
+
+# Claude Code agent worktrees
+.claude/worktrees/
