@@ -60,25 +60,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v27
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
+      # CI deliberately does NOT use flake.nix: its pinned pebble.nix ships
+      # pebble-tool 5.0.35, while the current SDK requires >=5.0.38 and its
+      # install aborts at the extract step. The tool is on PyPI and the SDK
+      # brings its own ARM toolchain, so install it directly. flake.nix stays
+      # the local development path.
+      - name: Install pebble-tool
+        run: |
+          pipx install pebble-tool
+          pebble --version
 
-      # The SDK is a large download that pebble.nix does not provide; cache it
-      # across runs keyed on the flake lock so a lockfile bump refetches.
+      # binutils-arm-none-eabi provides arm-none-eabi-readelf for reloc-check.
+      - name: Install ARM binutils
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq binutils-arm-none-eabi
+
       - name: Cache Pebble SDK
         uses: actions/cache@v4
         with:
           path: ~/.pebble-sdk
-          key: pebble-sdk-${{ hashFiles('flake.lock') }}
-          restore-keys: pebble-sdk-
+          key: pebble-sdk-${{ runner.os }}-v1
+          restore-keys: pebble-sdk-${{ runner.os }}-
 
       - name: Install Pebble SDK (first run / cache miss)
         run: |
           if [ ! -d "$HOME/.pebble-sdk/SDKs/current" ]; then
-            nix develop --command pebble sdk install latest
+            pebble sdk install latest
           else
             echo "SDK restored from cache"
           fi
@@ -88,7 +94,7 @@ jobs:
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Build
-        run: nix develop --command pebble build
+        run: pebble build
 
       # Guards the class of defect that shipped a completely unlaunchable 0.0.7:
       # an address-valued initializer inside a packed struct emits a misaligned
@@ -97,14 +103,14 @@ jobs:
       - name: Relocation alignment check
         run: |
           if [ -f tools/reloc-check.sh ]; then
-            nix develop --command sh tools/reloc-check.sh
+            sh tools/reloc-check.sh
           else
             echo "::warning::tools/reloc-check.sh absent on this ref - skipping"
           fi
 
       - name: Strict per-platform compile (cloud flags)
         continue-on-error: true # advisory until the -Wno-error debt is paid off
-        run: nix develop --command sh tools/strict-check.sh
+        run: sh tools/strict-check.sh
 
       - name: Upload .pbw
         uses: actions/upload-artifact@v4
