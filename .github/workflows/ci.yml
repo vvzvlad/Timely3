@@ -13,9 +13,10 @@ jobs:
       - uses: actions/checkout@v4
 
       # Pure-logic modules compile and run on the host (no Pebble SDK needed),
-      # covering layout, calendar, suntimes, time/date formatting, vibes and the
-      # clock-font selection. The full per-platform SDK build + warning-strict
-      # compile run locally via `tools/test.sh`.
+      # covering layout, calendar, suntimes, time/date formatting, vibes, the
+      # clock-font selection and the persisted settings layout. The full
+      # per-platform SDK build + warning-strict compile run locally via
+      # `tools/test.sh`.
       - name: Host unit tests
         run: |
           gcc -std=c11 -DUNIT_TEST -Isrc -Itests tests/test_*.c \

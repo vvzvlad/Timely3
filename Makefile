@@ -37,6 +37,7 @@ test-clean:
 ## ---- Pebble app + emulator ----
 build:
 	pebble build
+	sh tools/reloc-check.sh
 
 run install: build          ## build + (re)install on the emulator
 	pebble install --emulator $(EMU)

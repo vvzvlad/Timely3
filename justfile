@@ -31,6 +31,7 @@ test-clean:
 # compile the .pbw
 build:
     pebble build
+    sh tools/reloc-check.sh
 
 # build + (re)install on the emulator (EMU=emery by default)
 run: build
@@ -76,7 +77,7 @@ config:
     command -v pebble >/dev/null 2>&1 || { echo "Run inside 'nix develop' first."; exit 1; }
     p="$(just _pick-emu)"
     echo "▸ $p: build → install → config"
-    pebble build
+    just build
     pebble install --emulator "$p"
     node tools/gen-config-html.js {{build}}/config.html
     echo "Config page opening for $p — pick a theme/mode and press Save; the watchface updates live."
@@ -105,10 +106,15 @@ menu:
       "Host tests") exec just test ;;
       "Install to watch")
         ip=$(gum input --placeholder "phone IP (Pebble app → Developer Connection)")
-        pebble build && pebble install --phone "$ip"; exit 0 ;;
+        # Separate statements, not `just build && ...`: in an && list a failing
+        # non-final command is exempt from `set -e`, so a failed build (e.g. the
+        # reloc-check gate firing) would still let this recipe exit 0.
+        just build
+        pebble install --phone "$ip"
+        exit 0 ;;
     esac
     p=$(gum choose --header "Emulator platform:" emery flint basalt diorite aplite)
-    pebble build
+    just build
     case "$action" in
       "Run on emulator")    pebble install --emulator "$p" ;;
       "Configure themes")   pebble install --emulator "$p"; node tools/gen-config-html.js "{{build}}/config.html"; pebble emu-app-config --emulator "$p" --file "{{build}}/config.html" ;;
