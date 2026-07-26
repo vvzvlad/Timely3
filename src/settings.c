@@ -1,7 +1,7 @@
 #include "settings.h"
 
 static persist s_settings = {
-  .version    = 12,
+  .version    = PERSIST_SETTINGS_VERSION, // on-flash layout version, defined in settings.h
   .inverted   = 0, // no, dark
   .day_invert = 1, // yes
   .grid       = 1, // yes
@@ -20,9 +20,6 @@ static persist s_settings = {
   .week_format = 0, // ISO 8601
   .vibe_pat_disconnect = 2, // double vibe
   .vibe_pat_connect = 0, // no vibe
-  // Layout padding only, never read in C — must not hold an address of any kind
-  // (see the packed-struct-on-flash contract in settings.h).
-  .strftime_format_reserved = {0},
   .track_battery = 0,
   .theme = 1,       // Functional
   .theme_mode = 1,  // Dark (matches the pre-theme look)

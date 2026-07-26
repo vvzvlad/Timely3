@@ -2233,10 +2233,17 @@ static void init(void) {
   app_message_init();
 
   if (persist_exists(PK_SETTINGS)) {
+    // The blob is read over the compiled-in defaults, so keep a pristine copy to
+    // restore from: a blob written by a build with a different `persist` layout
+    // would land field-by-field in the wrong members (and a shorter one leaves
+    // the tail untouched). The version byte is at offset 0 in every layout so
+    // far, so it can be trusted to identify the blob; anything else in it cannot.
+    const persist settings_defaults = *settings_get();
     persist_read_data(PK_SETTINGS, settings_get(), sizeof(persist) );
-    if (settings_get()->version == 11) { // v11 -> v12 bugfix
-      if (settings_get()->date_format > 234) { settings_get()->date_format = settings_get()->date_format + 1; }
-      settings_get()->version = 12;
+    if (settings_get()->version != PERSIST_SETTINGS_VERSION) {
+      // Stale or unknown layout: discard it wholesale rather than migrate. The
+      // next config save rewrites PK_SETTINGS with the current layout/version.
+      *settings_get() = settings_defaults;
     }
     if (persist_exists(PK_LANG_GEN)) {
       persist_read_data(PK_LANG_GEN, lang_gen_get(), sizeof(persist_general_lang) );
