@@ -49,6 +49,10 @@ const char *datefmt_table_entry(uint8_t date_format);
 // inside this parameter list and fail under -Werror. A pointer parameter only
 // needs the incomplete type; the host build (real <time.h>) is unaffected.
 struct tm;
+// timefmt.c also CALLS strftime, which -D_TIME_H_ hides too — declare it (standard
+// signature, harmless under a real <time.h>) or strict-check's -Werror flags an
+// implicit declaration on the Pebble target.
+size_t strftime(char *s, size_t max, const char *fmt, const struct tm *tm);
 void datefmt_render(uint8_t date_format, const char *custom_fmt,
                     const struct tm *t, char *out, size_t n);
 
