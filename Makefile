@@ -32,9 +32,9 @@ $(TEST_BIN): $(TEST_SRC) $(wildcard src/*.h tests/*.h)
 	mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(TEST_SRC) -o $(TEST_BIN)
 
-## ---- PebbleKit JS host tests (node; no SDK / no npm deps) ----
+## ---- PebbleKit JS host tests (node:test; no SDK / no npm deps) ----
 test-js:
-	node tests/js/roundtrip.test.js
+	node --test tests/js/
 
 test-clean:
 	rm -f $(TEST_BIN) $(BUILD)/test-results.xml
