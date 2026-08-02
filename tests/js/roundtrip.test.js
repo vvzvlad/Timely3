@@ -98,4 +98,56 @@ test('wrong-length payload rejected', function () {
   assert.notStrictEqual(wirec.decodeN(exactPayload, WIRE_KEYS), null, 'exact-length n[] must be accepted');
 });
 
+// --- Case 5: payload-size budget (issue #4 / audit C4) ---
+// The bulky translation strings (trans_*) travel by NAME. A normal save (numeric
+// n[] + the two short string settings) is well under budget and must be sent; a
+// full custom translation set that would overflow the watch inbox must be
+// REFUSED, so the page can show a visible message instead of a silent drop.
+// These reddens if the guard is dropped: estimateDictSize returning a constant,
+// or payloadFits() always true, fails the oversized assertion; charging strings
+// zero bytes (dropping the trans_* accounting) fails it too.
+var BUDGET = wirec.PAYLOAD_BUDGET; // single source (src/js/wirec.js)
+test('budget: normal save fits, oversized custom translations rejected', function () {
+  // A realistic in-budget save: 32 positional numerics + the two by-name strings.
+  var small = {
+    n: new Array(WIRE_KEYS.length).fill(1),
+    strftime_format: '%Y-%m-%d',
+    language: 'IT'
+  };
+  assert.strictEqual(wirec.payloadFits(small, BUDGET), true, 'a normal save must fit the budget');
+
+  // The measured size is stable and comfortably under budget (guards against a
+  // future change that silently inflates the per-save payload).
+  var smallSz = wirec.estimateDictSize(small);
+  assert.ok(smallSz < BUDGET, 'normal save (' + smallSz + 'B) must be < budget');
+
+  // An oversized payload: a full custom translation set (42 trans_* keys) each a
+  // long accented string, simulating "Custom" language with verbose strings.
+  var big = { n: new Array(WIRE_KEYS.length).fill(1), strftime_format: '%Y-%m-%d', language: 'custom' };
+  for (var i = 0; i < 42; i++) {
+    big['trans_field_' + i] = 'Uná stringa di traduzione molto lunga numero ' + i; // multibyte
+  }
+  var bigSz = wirec.estimateDictSize(big);
+  assert.ok(bigSz > BUDGET, 'oversized custom set (' + bigSz + 'B) must exceed budget');
+  assert.strictEqual(wirec.payloadFits(big, BUDGET), false, 'oversized payload must be REFUSED');
+
+  // ACCEPTANCE (#4b): switching to a BUILT-IN language (Italiano) applies FULLY.
+  // A full built-in set is 42 trans_* keys of NORMAL length (e.g. "Mercoledì"),
+  // which must FIT the budget — otherwise the acceptance ("Italiano применяется
+  // полностью") fails. This sits between `small` and `big`, the real boundary case.
+  var builtin = { n: new Array(WIRE_KEYS.length).fill(1), strftime_format: '%Y-%m-%d', language: 'IT' };
+  var words = ['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato',
+               'Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio'];
+  for (var b2 = 0; b2 < 42; b2++) { builtin['trans_field_' + b2] = words[b2 % words.length]; }
+  var builtinSz = wirec.estimateDictSize(builtin);
+  assert.strictEqual(wirec.payloadFits(builtin, BUDGET), true,
+    'a built-in language (' + builtinSz + 'B) must FIT so it applies fully');
+
+  // Multibyte accounting is by BYTES not chars: an accented string costs more
+  // than its character count (so the estimate is not silently under-counting).
+  var accented = { n: [], 'trans_x': 'ìììì' }; // 4 chars, 8 UTF-8 bytes
+  // 1 (count) + 7 (overhead) + 8 (bytes) + 1 (NUL) = 17
+  assert.strictEqual(wirec.estimateDictSize(accented), 17, 'UTF-8 bytes, not chars, must be charged');
+});
+
 console.log('\nAll ' + pass + ' JS round-trip tests passed.');
