@@ -336,81 +336,10 @@ char *format_current_date(void) {
 
     //September 11, 2013 => 18 chars, 9 of which could potentially be dual byte utf8 characters
     //123456789012345678
-    const char *datestr[] = {
-      // MM DD YYYY (%m %d %Y)
-      "%m.%d.%Y", // 195 MM.DD.YYYY
-      "%m-%d-%Y", // 196 MM-DD-YYYY
-      "%m/%d/%Y", // 197 MM/DD/YYYY
-      "%m %d %Y", // 198 MM DD YYYY
-      "%m%d%Y",   // 199 MMDDYYYY
-      // MM DD YY (%m %d %y)
-      "%m.%d.%y", // 200 MM.DD.YY
-      "%m-%d-%y", // 201 MM-DD-YY
-      "%m/%d/%y", // 202 MM/DD/YY
-      "%m %d %y", // 203 MM DD YY
-      "%m%d%y",   // 204 MMDDYY
-      // MM dd YYYY (%m %e %Y)
-      "%m.%e.%Y", // 205 MM.dd.YYYY
-      "%m-%e-%Y", // 206 MM-dd-YYYY
-      "%m/%e/%Y", // 207 MM/dd/YYYY
-      "%m %e %Y", // 208 MM dd YYYY
-      "%m%e%Y",   // 209 MMddYYYY
-      // MM dd YY (%m %e %y)
-      "%m.%e.%y", // 210 MM.dd.YY
-      "%m-%e-%y", // 211 MM-dd-YY
-      "%m/%e/%y", // 212 MM/dd/YY
-      "%m %e %y", // 213 MM dd YY
-      "%m%e%y",   // 214 MMddYY
-      // DD MM YYYY (%d %m %Y)
-      "%d.%m.%Y", // 215 DD.MM.YYYY
-      "%d-%m-%Y", // 216 DD-MM-YYYY
-      "%d/%m/%Y", // 217 DD/MM/YYYY
-      "%d %m %Y", // 218 DD MM YYYY
-      "%d%m%Y",   // 219 DDMMYYYY
-      // DD MM YY (%d %m %y)
-      "%d.%m.%y", // 220 DD.MM.YY
-      "%d-%m-%y", // 221 DD-MM-YY
-      "%d/%m/%y", // 222 DD/MM/YY
-      "%d %m %y", // 223 DD MM YY
-      "%d%m%y",   // 224 DDMMYY
-      // dd MM YYYY (%e %m %Y)
-      "%e.%m.%Y", // 225 dd.MM.YYYY
-      "%e-%m-%Y", // 226 dd-MM-YYYY
-      "%e/%m/%Y", // 227 dd/MM/YYYY
-      "%e %m %Y", // 228 dd MM YYYY
-      "%e%m%Y",   // 229 ddMMYYYY
-      // dd MM YY (%e %m %y)
-      "%e.%m.%y", // 230 dd.MM.YY
-      "%e-%m-%y", // 231 dd-MM-YY
-      "%e/%m/%y", // 232 dd/MM/YY
-      "%e %m %y", // 233 dd MM YY
-      "%e%m%y",   // 234 ddMMYY
-      // YYYY MM DD (%Y %m %d)
-      "%Y.%m.%d", // 235 YYYY.MM.DD
-      "%Y-%m-%d", // 236 YYYY-MM-DD
-      "%Y/%m/%d", // 237 YYYY/MM/DD
-      "%Y %m %d", // 238 YYYY MM DD
-      "%Y%m%d",   // 239 YYYYMMDD
-      // YY MM DD (%y %m %d)
-      "%y.%m.%d", // 240 YY.MM.DD
-      "%y-%m-%d", // 241 YY-MM-DD
-      "%y/%m/%d", // 242 YY/MM/DD
-      "%y %m %d", // 243 YY MM DD
-      "%y%m%d",   // 244 YYMMDD
-      // YYYY MM dd (%Y %m %e)
-      "%Y.%m.%e", // 245 YYYY.MM.dd
-      "%Y-%m-%e", // 246 YYYY-MM-dd
-      "%Y/%m/%e", // 247 YYYY/MM/dd
-      "%Y %m %e", // 248 YYYY MM dd
-      "%Y%m%e",   // 249 YYYYMMdd
-      // YY MM dd (%y %m %e)
-      "%y.%m.%e", // 250 YY.MM.dd
-      "%y-%m-%e", // 251 YY-MM-dd
-      "%y/%m/%e", // 246 YY/MM/dd
-      "%y %m %e", // 247 YY MM dd
-      "%y%m%e",   // 248 YYMMdd
-    };
-    char date_text[24];
+    // The non-localized (195..254 table) and custom (255) strftime formats now
+    // live in timefmt.c (datefmt_table_entry / datefmt_render), so they can be
+    // host-unit-tested. See tests/test_timefmt.c.
+    char date_text[32]; // >= 32: holds the widest custom_date_fmt (31 chars + NUL)
     static char date_string[64]; // localized "%s %s %s" date; sized to avoid truncation under modern gcc
     // http://www.cplusplus.com/reference/ctime/strftime/
 
@@ -454,13 +383,11 @@ char *format_current_date(void) {
         snprintf(date_string, sizeof(date_string), "%s %s %s", date_text, lang_gen_get()->abbrMonthsNames[currentTime->tm_mon], date_text_2); // insert Mon
         break;
       }
-    } else { // non-localized date formats, straight strftime function calls
-      if ((settings_get()->date_format>=195)||(settings_get()->date_format<=254)) { // load from table
-        strftime(date_text, sizeof(date_text), datestr[settings_get()->date_format-195], currentTime);
-      } else if (settings_get()->date_format==255) {
-        strftime(date_text, sizeof(date_text), adv_settings_get()->custom_date_fmt, currentTime);
-      }
-
+    } else { // non-localized date formats: custom (255) or table (195..254)
+      // Sentinel 255 is resolved FIRST (custom format); 195..254 hit the table;
+      // any other value yields "" -- no blind indexing, strftime return checked.
+      datefmt_render(settings_get()->date_format, adv_settings_get()->custom_date_fmt,
+                     currentTime, date_text, sizeof(date_text));
       snprintf(date_string, sizeof(date_string), "%s", date_text); // straight copy
     }
 
@@ -1861,7 +1788,7 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
     // AK_INTL_FMT_DATE == date format (strftime + manual localization)
     Tuple *FMT_DATE = dict_find(received, AK_INTL_FMT_DATE);
     if (FMT_DATE != NULL) {
-      settings_get()->date_format = FMT_DATE->value->uint8;
+      settings_get()->date_format = datefmt_clamp(FMT_DATE->value->uint8); // validate on receive
       update_date_text();
     }
 
@@ -2235,9 +2162,11 @@ static void init(void) {
   if (persist_exists(PK_SETTINGS)) {
     persist_read_data(PK_SETTINGS, settings_get(), sizeof(persist) );
     if (settings_get()->version == 11) { // v11 -> v12 bugfix
-      if (settings_get()->date_format > 234) { settings_get()->date_format = settings_get()->date_format + 1; }
+      settings_get()->date_format = datefmt_migrate_v11_to_v12(settings_get()->date_format);
       settings_get()->version = 12;
     }
+    // Clamp whatever we loaded/migrated to the renderer's safe set.
+    settings_get()->date_format = datefmt_clamp(settings_get()->date_format);
     if (persist_exists(PK_LANG_GEN)) {
       persist_read_data(PK_LANG_GEN, lang_gen_get(), sizeof(persist_general_lang) );
     }
