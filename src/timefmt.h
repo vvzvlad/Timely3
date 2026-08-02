@@ -43,6 +43,12 @@ const char *datefmt_table_entry(uint8_t date_format);
 // return is checked: on 0 (result did not fit / empty) out becomes "" so a
 // caller never reads past a missing terminator. out needs >= 32 bytes to hold
 // the widest formats (custom_date_fmt is 31 chars + NUL).
+// Forward-declare struct tm: the Pebble target build compiles with -D_TIME_H_,
+// which stubs the standard <time.h> (struct tm comes from the SDK headers, not
+// libc), so a header relying on <time.h> for the type would declare struct tm
+// inside this parameter list and fail under -Werror. A pointer parameter only
+// needs the incomplete type; the host build (real <time.h>) is unaffected.
+struct tm;
 void datefmt_render(uint8_t date_format, const char *custom_fmt,
                     const struct tm *t, char *out, size_t n);
 
