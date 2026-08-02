@@ -67,6 +67,29 @@ function clampFromSpec(spec) {
   return clamp;
 }
 
+// Filter a decoded settings object down to the keys we are willing to PERSIST in
+// localStorage (audit L19). Only real settings survive: the numeric wire keys,
+// the two by-name string settings (strftime_format, language), any trans_*
+// translation string, and lang_mode. lang_mode is a LOCAL-ONLY flag (whether the
+// user chose "Custom") — stored so the page reopens on Custom (audit C3) but it
+// is NOT a message key and app.js strips it from the watch payload. Any other key
+// (an unknown or hostile one riding in via the returned payload) is DROPPED, so
+// it can never enter the stored blob that configpage.js re-inlines into <script>.
+// Pure — wireKeys order is passed in; this module never owns the wire contract.
+function storableKeys(dict, wireKeys) {
+  var known = {};
+  for (var i = 0; i < wireKeys.length; i++) { known[wireKeys[i]] = true; }
+  known.strftime_format = true;
+  known.language = true;
+  known.lang_mode = true; // localStorage-only; never sent to the watch
+  var out = {};
+  for (var k in dict) {
+    if (!Object.prototype.hasOwnProperty.call(dict, k)) { continue; }
+    if (known[k] === true || k.indexOf('trans_') === 0) { out[k] = dict[k]; }
+  }
+  return out;
+}
+
 // Estimate the on-device AppMessage inbox size (in bytes) the settings `send`
 // object will occupy, so the config page can REFUSE an oversized save with a
 // visible message instead of overflowing the watch inbox silently (issue #4 /
@@ -135,6 +158,7 @@ var PAYLOAD_BUDGET = 1800;
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     encodeN: encodeN, decodeN: decodeN, clampFromSpec: clampFromSpec,
+    storableKeys: storableKeys,
     estimateDictSize: estimateDictSize, payloadFits: payloadFits,
     PAYLOAD_BUDGET: PAYLOAD_BUDGET
   };

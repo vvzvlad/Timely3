@@ -64,15 +64,22 @@ var MON_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 var translations = [
   { key: 'trans_connected', label: 'Connected', type: 'text', def: 'Linked', max: 9 },
   { key: 'trans_disconnected', label: 'Disconnected', type: 'text', def: 'NOLINK', max: 9 },
-  { key: 'trans_time_am', label: 'AM', type: 'text', def: 'AM', max: 6 },
-  { key: 'trans_time_pm', label: 'PM', type: 'text', def: 'PM', max: 6 }
+  // max is a maxlength in CHARACTERS; the watch buffer is BYTES. abbrTime[2][12]
+  // holds 11 bytes + NUL, so a 5-char worst-case 2-byte Cyrillic string (10 bytes)
+  // still fits and stays terminated. Clamping the input (not widening the persist
+  // buffer, which is a compat contract) is the H9 fix.
+  { key: 'trans_time_am', label: 'AM', type: 'text', def: 'AM', max: 5 },
+  { key: 'trans_time_pm', label: 'PM', type: 'text', def: 'PM', max: 5 }
 ]
   .concat(textFields(DOW.map(function (d) { return 'trans_abbr_' + d; }),
     DOW_LABEL.map(function (l) { return l + ' (abbr)'; }), DOW_ABBR, 2))
   .concat(textFields(DOW.map(function (d) { return 'trans_' + d; }), DOW_LABEL, DOW_LABEL, 12))
   .concat(textFields(MON.map(function (m) { return 'trans_abbr_' + m; }),
     MON_LABEL.map(function (l) { return l + ' (abbr)'; }), MON_ABBR, 3))
-  .concat(textFields(MON.map(function (m) { return 'trans_' + m; }), MON_LABEL, MON_LABEL, 11));
+  // Full month names: monthsNames[12][21] holds 20 bytes + NUL, so a 10-char
+  // worst-case 2-byte Cyrillic string (20 bytes) fits exactly (the C receive path
+  // NUL-terminates at [20]). max is chars, not bytes — hence 10, not 11 (H9).
+  .concat(textFields(MON.map(function (m) { return 'trans_' + m; }), MON_LABEL, MON_LABEL, 10));
 translations.forEach(function (f) { f.langCustom = true; });
 
 module.exports = [

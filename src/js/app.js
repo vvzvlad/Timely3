@@ -353,16 +353,25 @@ Pebble.addEventListener("webviewclosed", function (e) {
         return;
     }
 
+    // Keep only recognised keys (audit L19): an unknown or hostile key in the
+    // returned payload must reach neither the watch nor the stored blob (the blob
+    // is re-inlined into the config page's <script>). storableKeys also KEEPS
+    // lang_mode — a LOCAL-ONLY Custom flag (audit C3) — which we then strip from
+    // the watch payload below, since it is not a message key.
+    var storable = wirec.storableKeys(full, WIRE_KEYS);
+    var toWatch = {};
+    for (var wk in storable) { if (wk !== 'lang_mode') { toWatch[wk] = storable[wk]; } }
+
     // H5: persist ONLY from the success callback. The translation strings are a
     // delta against this stored blob, so writing it before the watch ACKs would
     // make the next page open think the strings already applied — the recomputed
     // delta would be empty and the watch stuck with the old strings forever. On
     // a NACK we leave the blob untouched so the full delta recomputes next open.
-    Pebble.sendAppMessage(full,
+    Pebble.sendAppMessage(toWatch,
         function (ev) {
             var stored = {};
             try { stored = JSON.parse(localStorage.getItem("timely_settings") || "{}"); } catch (err) {}
-            for (var sk in full) { stored[sk] = full[sk]; }
+            for (var sk in storable) { stored[sk] = storable[sk]; }
             localStorage.setItem("timely_settings", JSON.stringify(stored));
             console.log("Delivered config with transactionId=" + (ev && ev.data && ev.data.transactionId));
         },

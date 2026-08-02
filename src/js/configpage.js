@@ -43,9 +43,39 @@ var LANGS = {
     ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'],
     ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'],
     ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'],
-    ['Do', 'Lu', 'Ma', 'Me', 'Gi', 'Ve', 'Sa'], 'Connesso', 'Assente')
+    ['Do', 'Lu', 'Ma', 'Me', 'Gi', 'Ve', 'Sa'], 'Connesso', 'Assente'),
+  // Russian (H10). The C side already ships a Cyrillic unifont and RU layout
+  // offsets (set_unifont/apply_center/apply_bottom in Timely.c); this table is the
+  // only thing that was missing to make RU selectable. Same langTable field
+  // order/shape as EN/IT; nominative month names, standard 2-letter day and
+  // 3-letter month abbreviations. All strings stay within the per-field byte
+  // buffers (see config.js maxes and locale.h).
+  RU: langTable(
+    ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'],
+    ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'],
+    ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'],
+    ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'], 'Связь', 'Нет связи')
 };
-var LANG_OPTIONS = [['Follow system', 'system'], ['English', 'EN'], ['Italiano', 'IT'], ['Custom', 'custom']];
+var LANG_OPTIONS = [['Follow system', 'system'], ['English', 'EN'], ['Italiano', 'IT'], ['Русский', 'RU'], ['Custom', 'custom']];
+
+// Inline a value into the generated page <script> safely. JSON.stringify does
+// NOT escape '/', so a stored string value containing "</script>" would close the
+// <script> element early and inject markup (audit L19). Escaping every '<' to its
+// < JS-string form neutralises that without changing the parsed value.
+function jsInline(v) { return JSON.stringify(v).replace(/</g, '\\u003c'); }
+
+// Pure selection rule for the language dropdown: which option is preselected when
+// the config page opens, given the stored settings blob. A persisted Custom
+// choice (lang_mode==='custom', kept LOCAL-ONLY in localStorage) keeps the
+// selector on Custom so onLang() does NOT refill — and thereby clobber — the
+// user's hand-edited translation strings (audit C3). Without this, langResolve
+// had turned "custom" back into a real code, the selector reopened on that
+// language, and langFill() overwrote every trans_* field with ZERO user action.
+function langSelFor(current) {
+  if (current && (current.lang_mode === 'custom' || current.language === 'custom')) { return 'custom'; }
+  var lc = (current && current.language) ? String(current.language).toUpperCase() : 'EN';
+  return LANGS[lc] ? lc : 'custom'; // known language -> that; else Custom (keep existing strings)
+}
 
 function selOptions(options, val) {
   var s = '';
@@ -95,8 +125,7 @@ function renderField(f, current) {
       'Follow watch uses the system Quiet Time. Time period: From and To must differ.');
   }
   if (f.type === 'lang-sel') {
-    var lc = (current && current.language) ? String(current.language).toUpperCase() : 'EN';
-    var sel = LANGS[lc] ? lc : 'custom'; // known language -> that; else Custom (keep existing strings)
+    var sel = langSelFor(current);
     var opts = '';
     for (var li = 0; li < LANG_OPTIONS.length; li++) {
       opts += '<option value="' + esc(LANG_OPTIONS[li][1]) + '"' +
@@ -212,10 +241,13 @@ function buildConfigPage(spec, current) {
     'function qp(n,d){var m=(location.href||"").match(new RegExp("[?&]"+n+"=([^&#]*)"));' +
     'return m?decodeURIComponent(m[1]):d;}' +
     'var RET=qp("return_to","pebblejs://close#");' +
-    'var BASELINE=' + JSON.stringify(baseline) + ';' +
-    'var WK=' + JSON.stringify(WIRE_KEYS) + ';' +
+    // BASELINE carries stored trans_* strings that came from user input; inline it
+    // (and the rest) via jsInline so a "</script>" inside a value cannot break out
+    // of the <script> element (audit L19).
+    'var BASELINE=' + jsInline(baseline) + ';' +
+    'var WK=' + jsInline(WIRE_KEYS) + ';' +
     // Declared min/max bounds (from config.js) so the page clamps before sending.
-    'var CLAMP=' + JSON.stringify(wirec.clampFromSpec(spec)) + ';' +
+    'var CLAMP=' + jsInline(wirec.clampFromSpec(spec)) + ';' +
     // The exact same pure encoder app.js/tests use — inlined so the browser page
     // (which has no require) runs identical NaN-guard + clamp logic (see wirec.js).
     // Derive the call name from the function's OWN source so a bundler that renames
@@ -235,7 +267,7 @@ function buildConfigPage(spec, current) {
     // blob. APPROXIMATE: without an on-device measurement per platform this is a
     // conservative constant, not a proven ceiling (flagged to the orchestrator).
     'var BUDGET=' + wirec.PAYLOAD_BUDGET + ';' +
-    'var LANGS=' + JSON.stringify(LANGS) + ';' +
+    'var LANGS=' + jsInline(LANGS) + ';' +
     // Language selector: resolve the chosen code, fill the (hidden) translation
     // fields from the table, and toggle the Custom editor.
     'function langResolve(v){if(v==="system"){var n=(navigator.language||"en").slice(0,2).toUpperCase();return LANGS[n]?n:"EN";}if(v==="custom")return (BASELINE.language||"EN");return v;}' +
@@ -287,6 +319,10 @@ function buildConfigPage(spec, current) {
     'var send={n:__wn};' +
     'if(o.strftime_format!=null)send.strftime_format=o.strftime_format;' +
     'if(o.language!=null)send.language=o.language;' +
+    // Persist the raw selector choice (esp. "custom") as lang_mode. app.js keeps
+    // it in localStorage ONLY and strips it from the watch payload, so a Custom
+    // choice survives to the next page open without ever reaching the watch (C3).
+    'var __ls=byId("langSel");if(__ls)send.lang_mode=__ls.value;' +
     'for(var k in o){if(k.indexOf("trans_")===0&&String(o[k])!==String(BASELINE[k]))send[k]=o[k];}' +
     // Budget guard (issue #4 / audit C4): the bulky trans_* strings travel by
     // NAME, so a full custom translation set can exceed the watch inbox. Measure
@@ -310,4 +346,10 @@ function buildConfigPage(spec, current) {
     '<script>' + script + '<\/script></body></html>';
 }
 
+// Primary export is the page builder; the pure helpers and language tables are
+// attached for host tests (they have no browser/Pebble dependencies).
+buildConfigPage.jsInline = jsInline;
+buildConfigPage.langSelFor = langSelFor;
+buildConfigPage.LANGS = LANGS;
+buildConfigPage.LANG_OPTIONS = LANG_OPTIONS;
 module.exports = buildConfigPage;

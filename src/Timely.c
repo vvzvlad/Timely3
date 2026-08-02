@@ -2017,6 +2017,7 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
       if (translation != NULL) {
         if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, translation->value->cstring); }
         strncpy(lang_gen_get()->abbrDaysOfWeek[i - AK_TRANS_ABBR_SUNDAY], translation->value->cstring, sizeof(lang_gen_get()->abbrDaysOfWeek[i - AK_TRANS_ABBR_SUNDAY])-1);
+        lang_gen_get()->abbrDaysOfWeek[i - AK_TRANS_ABBR_SUNDAY][sizeof(lang_gen_get()->abbrDaysOfWeek[i - AK_TRANS_ABBR_SUNDAY])-1] = '\0'; // strncpy leaves a maxed multibyte buffer unterminated (H9)
       }
     }
 
@@ -2026,6 +2027,7 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
       if (translation != NULL) {
         if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, translation->value->cstring); }
         strncpy(lang_days_get()->DaysOfWeek[i - AK_TRANS_SUNDAY], translation->value->cstring, sizeof(lang_days_get()->DaysOfWeek[i - AK_TRANS_SUNDAY])-1);
+        lang_days_get()->DaysOfWeek[i - AK_TRANS_SUNDAY][sizeof(lang_days_get()->DaysOfWeek[i - AK_TRANS_SUNDAY])-1] = '\0'; // strncpy leaves a maxed multibyte buffer unterminated (H9)
       }
     }
 
@@ -2035,6 +2037,7 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
       if (translation != NULL) {
         if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, translation->value->cstring); }
         strncpy(lang_gen_get()->abbrMonthsNames[i - AK_TRANS_ABBR_JANUARY], translation->value->cstring, sizeof(lang_gen_get()->abbrMonthsNames[i - AK_TRANS_ABBR_JANUARY])-1);
+        lang_gen_get()->abbrMonthsNames[i - AK_TRANS_ABBR_JANUARY][sizeof(lang_gen_get()->abbrMonthsNames[i - AK_TRANS_ABBR_JANUARY])-1] = '\0'; // strncpy leaves a maxed multibyte buffer unterminated (H9)
       }
     }
 
@@ -2044,6 +2047,10 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
       if (translation != NULL) {
         if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, translation->value->cstring); }
         strncpy(lang_months_get()->monthsNames[i - AK_TRANS_JANUARY], translation->value->cstring, sizeof(lang_months_get()->monthsNames[i - AK_TRANS_JANUARY])-1);
+        // strncpy does not NUL-terminate when the source fills the buffer. A maxed
+        // multibyte (Cyrillic) name is exactly sizeof-1 bytes, so terminate the
+        // last byte explicitly to avoid an over-read (H9).
+        lang_months_get()->monthsNames[i - AK_TRANS_JANUARY][sizeof(lang_months_get()->monthsNames[i - AK_TRANS_JANUARY])-1] = '\0';
       }
     }
 
@@ -2053,18 +2060,23 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
       if (translation != NULL) {
         if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, translation->value->cstring); }
         strncpy(lang_gen_get()->statuses[i - AK_TRANS_CONNECTED], translation->value->cstring, sizeof(lang_gen_get()->statuses[i - AK_TRANS_CONNECTED])-1);
+        lang_gen_get()->statuses[i - AK_TRANS_CONNECTED][sizeof(lang_gen_get()->statuses[i - AK_TRANS_CONNECTED])-1] = '\0'; // strncpy leaves a maxed multibyte buffer unterminated (H9)
       }
     }
     vibe_suppression = true;
     update_connection();
     handle_vibe_suppression();
 
-    // AK_TRANS_TIME_AM / AK_TRANS_TIME_PM == AM / PM text, e.g. "AM" "PM" :), max 6 characters
+    // AK_TRANS_TIME_AM / AK_TRANS_TIME_PM == AM / PM text, e.g. "AM" "PM" :), max 5 characters
     for (int i = AK_TRANS_TIME_AM; i <= AK_TRANS_TIME_PM; i++ ) {
       translation = dict_find(received, i);
       if (translation != NULL) {
         if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, translation->value->cstring); }
         strncpy(lang_gen_get()->abbrTime[i - AK_TRANS_TIME_AM], translation->value->cstring, sizeof(lang_gen_get()->abbrTime[i - AK_TRANS_TIME_AM])-1);
+        // strncpy leaves the buffer unterminated when the source fills it; a maxed
+        // multibyte (Cyrillic) AM/PM string is sizeof-1 bytes, so NUL the last byte
+        // explicitly to avoid an over-read (H9).
+        lang_gen_get()->abbrTime[i - AK_TRANS_TIME_AM][sizeof(lang_gen_get()->abbrTime[i - AK_TRANS_TIME_AM])-1] = '\0';
       }
     }
     
