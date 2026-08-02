@@ -12,10 +12,11 @@ TEST_SRC := $(wildcard tests/*.c) src/timefmt.c src/layout.c src/calendar.c src/
 EMU  ?= emery
 SHOT ?= $(BUILD)/screenshot-$(EMU).png
 
-.PHONY: help test test-xml test-clean build install run shot config preview logs kill app-clean sdk
+.PHONY: help test test-js test-xml test-clean build install run shot config preview logs kill app-clean sdk
 
 help:
 	@echo "Host tests (nix develop .#test):  test  test-xml  test-clean"
+	@echo "JS round-trip test (node):        test-js"
 	@echo "Pebble (nix develop):             build  run  config  preview  shot  logs  kill  app-clean  sdk"
 	@echo "Guided picker (just):             just menu   (or: just config)"
 	@echo "Vars: EMU=$(EMU)  SHOT=$(SHOT)"
@@ -30,6 +31,10 @@ test-xml: $(TEST_BIN)
 $(TEST_BIN): $(TEST_SRC) $(wildcard src/*.h tests/*.h)
 	mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(TEST_SRC) -o $(TEST_BIN)
+
+## ---- PebbleKit JS host tests (node; no SDK / no npm deps) ----
+test-js:
+	node tests/js/roundtrip.test.js
 
 test-clean:
 	rm -f $(TEST_BIN) $(BUILD)/test-results.xml

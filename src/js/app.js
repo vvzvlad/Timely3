@@ -1,6 +1,7 @@
 var CONFIG_SPEC = require('./config');
 var buildConfigPage = require('./configpage');
 var WIRE_KEYS = require('./wirekeys'); // decode the positional numeric settings (see webviewclosed)
+var wirec = require('./wirec'); // pure decode (length-rejection), shared with configpage.js and tests
 
 // The bundled SunCalc library (below) used to attach itself to `window`; under
 // the CommonJS bundler there is no global object, so it populates this
@@ -146,7 +147,7 @@ function getWatchVersion() {
             console.log("Sent watch version request with transactionId=" + e.data.transactionId);
         },
         function (e) {
-            console.log("Unable to deliver watch version request message with transactionId=" + e.data.transactionId + " Error is: " + e.data.error.message);
+            console.log("Unable to deliver watch version request message with transactionId=" + (e.data && e.data.transactionId) + " Error is: " + (e.error && e.error.message));
         }
         );
 }
@@ -186,7 +187,7 @@ function sendTimezoneToWatch() {
             console.log("Sent TZ message (" + offsetQuarterHours + ") with transactionId=" + e.data.transactionId);
         },
         function (e) {
-            console.log("Unable to deliver TZ message with transactionId=" + e.data.transactionId + " Error is: " + e.data.error.message);
+            console.log("Unable to deliver TZ message with transactionId=" + (e.data && e.data.transactionId) + " Error is: " + (e.error && e.error.message));
         }
         );
 }
@@ -325,33 +326,48 @@ Pebble.addEventListener("webviewclosed", function (e) {
     // payload holds a literal % (strftime_format defaults to "%Y-%m-%d"), which
     // silently dropped EVERY save. Only decode when it is still percent-encoded
     // (an encoded payload starts with %7B, a decoded one with "{").
+    //
+    // The decode MUST sit inside the same try as JSON.parse: a truncated or
+    // malformed %XX (or a double-encoded %257B) makes decodeURIComponent throw
+    // "URI malformed", and outside the try that uncaught throw killed the whole
+    // handler and lost the save silently. Now both failures land in one catch.
     var raw = e.response;
-    var decoded = raw.match(/^\{/) ? raw : decodeURIComponent(raw);
+    var dict;
+    try {
+        var decoded = raw.match(/^\{/) ? raw : decodeURIComponent(raw);
+        dict = JSON.parse(decoded);
+    } catch (err) {
+        console.log("Config decode/parse failed (" + err + "); raw[0..80]=" + String(raw).slice(0, 80));
+        return;
+    }
 
     // The page sends the numeric settings positionally in `n` (WIRE_KEYS order),
     // plus the string settings and any changed translations by name. Expand `n`
-    // back to keys to rebuild the full desired state. (A legacy flat payload with
-    // no `n` is still accepted: its keys pass through unchanged.)
-    var dict;
-    try { dict = JSON.parse(decoded); } catch (err) { return; }
-    var full = {};
-    if (dict.n && dict.n.length) {
-        for (var i = 0; i < WIRE_KEYS.length; i++) { full[WIRE_KEYS[i]] = dict.n[i]; }
-        delete dict.n;
+    // back to keys to rebuild the full desired state (a legacy flat payload with
+    // no `n` passes its keys through). Reject a length mismatch: a short array
+    // leaves an undefined tail, a long one misaligns every following key.
+    var full = wirec.decodeN(dict, WIRE_KEYS);
+    if (full === null) {
+        console.log("Config rejected: n[] length " + (dict.n ? dict.n.length : 0) +
+            " != wire contract " + WIRE_KEYS.length + "; not applying");
+        return;
     }
-    for (var k in dict) { full[k] = dict[k]; } // strings, translations, or legacy flat keys
 
-    var stored = {};
-    try { stored = JSON.parse(localStorage.getItem("timely_settings") || "{}"); } catch (err) {}
-    for (var sk in full) { stored[sk] = full[sk]; }
-    localStorage.setItem("timely_settings", JSON.stringify(stored));
-
+    // H5: persist ONLY from the success callback. The translation strings are a
+    // delta against this stored blob, so writing it before the watch ACKs would
+    // make the next page open think the strings already applied — the recomputed
+    // delta would be empty and the watch stuck with the old strings forever. On
+    // a NACK we leave the blob untouched so the full delta recomputes next open.
     Pebble.sendAppMessage(full,
-        function (e) {
-            console.log("Delivered config with transactionId=" + e.data.transactionId);
+        function (ev) {
+            var stored = {};
+            try { stored = JSON.parse(localStorage.getItem("timely_settings") || "{}"); } catch (err) {}
+            for (var sk in full) { stored[sk] = full[sk]; }
+            localStorage.setItem("timely_settings", JSON.stringify(stored));
+            console.log("Delivered config with transactionId=" + (ev && ev.data && ev.data.transactionId));
         },
-        function (e) {
-            console.log("Unable to deliver config: " + e.data.error.message);
+        function (ev) {
+            console.log("Unable to deliver config: " + (ev && ev.error && ev.error.message));
         }
         );
 });
