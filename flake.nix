@@ -41,13 +41,10 @@
               pkgs.gnumake
               pkgs.gum # interactive prompts for the guided `just` recipes
             ];
-            # This 2013 codebase under the modern arm-none-eabi gcc 14 trips many
-            # warnings the SDK promotes to errors. The SDK's own suppressions do
-            # not reach the new flint platform, so downgrade warnings to non-fatal
-            # here (the SDK itself already disables ~40 such classes).
-            shellHook = ''
-              export CFLAGS="-Wno-error"
-            '';
+            # No CFLAGS override here: exporting -Wno-error silently defeated the
+            # SDK's -Werror in the dev shell, so warnings that fail the cloud build
+            # (and tools/strict-check.sh) passed locally. Warnings are surfaced by
+            # strict-check.sh under the exact cloud flag set instead.
           };
 
           # Host shell for the unit tests: C compiler + just/make.
@@ -60,29 +57,15 @@
           };
 
           # Reproducible host run of the pure-module unit suite (no Pebble SDK).
+          # Copy the src/ and tests/ trees whole and glob tests/test_*.c (the same
+          # single source as Makefile / justfile / tools/test.sh) so a newly added
+          # tests/test_*.c is picked up here too; only the host-compilable pure
+          # modules from src/ are linked. Same flag set as everywhere else.
           checks.default = pkgs.runCommandCC "timelycolor-tests" { } ''
-            mkdir -p src tests
-            cp ${./src/timefmt.c} src/timefmt.c
-            cp ${./src/timefmt.h} src/timefmt.h
-            cp ${./src/layout.c} src/layout.c
-            cp ${./src/layout.h} src/layout.h
-            cp ${./src/calendar.c} src/calendar.c
-            cp ${./src/calendar.h} src/calendar.h
-            cp ${./src/vibes.c} src/vibes.c
-            cp ${./src/vibes.h} src/vibes.h
-            cp ${./src/suntimes.c} src/suntimes.c
-            cp ${./src/suntimes.h} src/suntimes.h
-            cp ${./src/math.c} src/math.c
-            cp ${./src/math.h} src/math.h
-            cp ${./tests/utest.h} tests/utest.h
-            cp ${./tests/test_main.c} tests/test_main.c
-            cp ${./tests/test_timefmt.c} tests/test_timefmt.c
-            cp ${./tests/test_layout.c} tests/test_layout.c
-            cp ${./tests/test_calendar.c} tests/test_calendar.c
-            cp ${./tests/test_vibes.c} tests/test_vibes.c
-            cp ${./tests/test_suntimes.c} tests/test_suntimes.c
-            cc -I src -I tests -Wall -Wextra -std=c11 \
-              tests/test_main.c tests/test_timefmt.c tests/test_layout.c tests/test_calendar.c tests/test_vibes.c tests/test_suntimes.c \
+            cp -r ${./src} src
+            cp -r ${./tests} tests
+            cc -std=c11 -Wall -Wextra -Isrc -Itests \
+              tests/test_*.c \
               src/timefmt.c src/layout.c src/calendar.c src/vibes.c src/suntimes.c src/math.c -o test_suite
             ./test_suite
             touch $out

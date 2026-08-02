@@ -2,11 +2,15 @@
 #   Host unit tests:        run inside `nix develop .#test`   (needs a host cc)
 #   Pebble app + emulator:  run inside `nix develop`          (needs pebble CLI)
 
+# Single host-test flag set, shared verbatim with justfile / tools/test.sh /
+# tools/strict-check.sh consumers and the CI workflows.
 CC       ?= cc
-CFLAGS   ?= -I src -I tests -Wall -Wextra -std=c11
+CFLAGS   ?= -std=c11 -Wall -Wextra -Isrc -Itests
 BUILD    := build
 TEST_BIN := $(BUILD)/test_suite
-TEST_SRC := $(wildcard tests/*.c) src/timefmt.c src/layout.c src/calendar.c src/vibes.c src/suntimes.c src/math.c
+# Test sources are a single glob (tests/test_*.c) so a new test file is picked up
+# everywhere; only the host-compilable pure modules from src/ are linked.
+TEST_SRC := $(wildcard tests/test_*.c) src/timefmt.c src/layout.c src/calendar.c src/vibes.c src/suntimes.c src/math.c
 
 # emulator platform: aplite | basalt | chalk | diorite | emery | flint
 EMU  ?= emery

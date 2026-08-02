@@ -11,12 +11,20 @@ set -eu
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
 echo "== host unit tests =="
+# Single host-test flag set, identical to Makefile / justfile / CI. Test sources
+# are one glob (tests/test_*.c); only host-compilable pure modules are linked.
 out=$(mktemp)
-gcc -std=c11 -DUNIT_TEST -Isrc -Itests tests/test_*.c \
+gcc -std=c11 -Wall -Wextra -Isrc -Itests tests/test_*.c \
     src/layout.c src/calendar.c src/suntimes.c src/timefmt.c src/vibes.c src/math.c \
     -lm -o "$out"
 "$out"
 rm -f "$out"
+
+echo "== version single-source (package.json <-> src/splash.c) =="
+sh tools/check-version.sh
+
+echo "== appkeys bijection (AK_* <-> package.json messageKeys) =="
+sh tools/check-appkeys.sh
 
 echo "== JS round-trip tests =="
 # Wire-contract round-trip coverage (configpage -> app.js) via the built-in
