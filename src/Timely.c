@@ -607,15 +607,16 @@ void update_slot_text(TextLayer *layer, uint8_t content) {
 // Lay out a two-slot complication row at (top,h): both set -> halves; one set ->
 // full-width centered in the left layer; none -> both hidden.
 static void layout_two_slots(TextLayer *l, TextLayer *r, uint8_t cl, uint8_t cr, int top, int h) {
-  int half = DEVICE_WIDTH / 2;
   Layer *ll = text_layer_get_layer(l), *rl = text_layer_get_layer(r);
   if (cl && cr) {
-    layer_set_frame(ll, GRect(2, top, half - 4, h));        text_layer_set_text_alignment(l, GTextAlignmentLeft);
-    layer_set_frame(rl, GRect(half + 2, top, half - 4, h)); text_layer_set_text_alignment(r, GTextAlignmentRight);
+    SlotPair p = layout_slot_pair(DEVICE_WIDTH);
+    layer_set_frame(ll, GRect(p.left.x,  top, p.left.w,  h)); text_layer_set_text_alignment(l, GTextAlignmentLeft);
+    layer_set_frame(rl, GRect(p.right.x, top, p.right.w, h)); text_layer_set_text_alignment(r, GTextAlignmentRight);
     layer_set_hidden(ll, false); layer_set_hidden(rl, false);
     update_slot_text(l, cl); update_slot_text(r, cr);
   } else if (cl || cr) {
-    layer_set_frame(ll, GRect(2, top, DEVICE_WIDTH - 4, h)); text_layer_set_text_alignment(l, GTextAlignmentCenter);
+    SlotSpan f = layout_slot_full(DEVICE_WIDTH);
+    layer_set_frame(ll, GRect(f.x, top, f.w, h)); text_layer_set_text_alignment(l, GTextAlignmentCenter);
     layer_set_hidden(ll, false); layer_set_hidden(rl, true);
     update_slot_text(l, cl ? cl : cr);
   } else {
@@ -673,15 +674,7 @@ static bool s_status_icon_shown = false;
 // Battery-bar box geometry for one side. with_icon (bar+icon style) reserves a
 // leading 18px for the glyph on the outer edge and narrows the box.
 static void batt_box_geom(bool is_right, bool with_icon, int *bx, int *bw) {
-  int half = DEVICE_WIDTH / 2;
-  if (is_right) {
-    *bx = half + 2;
-    *bw = with_icon ? half - 22 : half - 12;
-    if (s_status_icon_shown) { *bx += 22; *bw -= 22; } // status icon docks at half+2
-  } else {
-    *bx = with_icon ? 20 : 2;
-    *bw = with_icon ? half - 28 : half - 10;
-  }
+  layout_batt_box(DEVICE_WIDTH, is_right, with_icon, s_status_icon_shown, bx, bw);
 }
 
 // Render one status-bar slot. Battery content honours batt_style: bar (outline

@@ -57,6 +57,26 @@ int chrg_icon_x_for(int width, int right_slot_is_bar);
 // (width-4) at a 22px pitch; idx 0 is the rightmost.
 int status_tray_x(int width, int idx);
 
+// Slot-rectangle geometry for the two dynamic complication rows (center /
+// above-calendar) and the battery boxes. Pure integer math extracted verbatim
+// from the view so it can be host-tested; every consumer that laid these out
+// inline now routes through here (behavior-preserving, zero-pixel).
+typedef struct { int x, w; } SlotSpan;
+typedef struct { SlotSpan left, right; } SlotPair;
+
+// Two-slot split for a row of `width`: half = width/2; left {2, half-4},
+// right {half+2, half-4}. Used when both slots have content.
+SlotPair layout_slot_pair(int width);
+// Single centered slot spanning the row: {2, width-4}. Used when one slot set.
+SlotSpan layout_slot_full(int width);
+
+// Battery-bar box geometry for one side (right/left), matching the status-bar
+// battery layout. with_icon (bar+icon style) reserves a leading glyph on the
+// outer edge and narrows the box; status_icon_shown yields the right box 22px
+// so the charging/DND/hourvibe icon can dock at half+2. Writes bx/bw.
+void layout_batt_box(int width, bool is_right, bool with_icon,
+                     bool status_icon_shown, int *bx, int *bw);
+
 // The most recently computed layout (set by the view at window_load); read by
 // components that render proportionally (calendar, etc.).
 void layout_store(TimelyLayout l);

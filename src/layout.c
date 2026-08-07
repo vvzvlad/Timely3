@@ -86,6 +86,37 @@ int status_tray_x(int width, int idx) {
   return width - (border_right + icon_box) - (idx * icon_box);
 }
 
+// Two-slot split (both complications present): halves with a 2px inner gutter.
+// Verbatim from layout_two_slots' cl&&cr branch in the view.
+SlotPair layout_slot_pair(int width) {
+  int half = width / 2;
+  SlotPair p;
+  p.left  = (SlotSpan){ 2, half - 4 };
+  p.right = (SlotSpan){ half + 2, half - 4 };
+  return p;
+}
+
+// Single centered slot (one complication present): full width, 2px margins.
+// Verbatim from layout_two_slots' cl||cr branch in the view.
+SlotSpan layout_slot_full(int width) {
+  return (SlotSpan){ 2, width - 4 };
+}
+
+// Battery-bar box geometry. Byte-for-byte copy of batt_box_geom() from the view
+// (Timely.c); status_icon_shown is the view's s_status_icon_shown flag.
+void layout_batt_box(int width, bool is_right, bool with_icon,
+                     bool status_icon_shown, int *bx, int *bw) {
+  int half = width / 2;
+  if (is_right) {
+    *bx = half + 2;
+    *bw = with_icon ? half - 22 : half - 12;
+    if (status_icon_shown) { *bx += 22; *bw -= 22; } // status icon docks at half+2
+  } else {
+    *bx = with_icon ? 20 : 2;
+    *bw = with_icon ? half - 28 : half - 10;
+  }
+}
+
 static TimelyLayout s_current;
 void layout_store(TimelyLayout l) { s_current = l; }
 TimelyLayout layout_get(void) { return s_current; }
