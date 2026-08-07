@@ -233,8 +233,9 @@ function wmoToClimacon(code, isDay) {
 // calls back with "" on any failure so weather still updates.
 function reverseGeocode(latitude, longitude, cb) {
   var req = new XMLHttpRequest();
+  // The watch only stores 2-decimal coordinates, so trim precision to match.
   req.open('GET', "https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=" +
-    latitude + "&longitude=" + longitude + "&localityLanguage=en", true);
+    latitude.toFixed(2) + "&longitude=" + longitude.toFixed(2) + "&localityLanguage=en", true);
   req.timeout = 10000;
   req.onload = function() {
     var city = "";
@@ -277,13 +278,6 @@ function weatherLocationSuccess(pos) {
 function locationError(err) {
   console.warn('Weather: location error (' + err.code + '): ' + err.message);
   sendWeather(999, CLIMACON['compass']); // 999 = failure sentinel the watch's fast-retry gate keys on (audit H3)
-}
-
-function isItNight() {
-  var now = new Date();
-  var sunInfo = SunCalc.getTimes(now, lastCoordinates.latitude, lastCoordinates.longitude);
-  var night = sunInfo.sunset < now || now < sunInfo.sunrise;
-  return night;
 }
 
 function getMoonIcon() {
@@ -415,9 +409,6 @@ var dayMs = 1000 * 60 * 60 * 24,
 function toJulian(date) {
     return date.valueOf() / dayMs - 0.5 + J1970;
 }
-function fromJulian(j) {
-    return new Date((j + 0.5 - J1970) * dayMs);
-}
 function toDays(date) {
     return toJulian(date) - J2000;
 }
@@ -432,15 +423,6 @@ function getRightAscension(l, b) {
 }
 function getDeclination(l, b) {
     return asin(sin(b) * cos(e) + cos(b) * sin(e) * sin(l));
-}
-function getAzimuth(H, phi, dec) {
-    return atan(sin(H), cos(H) * sin(phi) - tan(dec) * cos(phi));
-}
-function getAltitude(H, phi, dec) {
-    return asin(sin(phi) * sin(dec) + cos(phi) * cos(dec) * cos(H));
-}
-function getSiderealTime(d, lw) {
-    return rad * (280.16 + 360.9856235 * d) - lw;
 }
 
 
@@ -472,110 +454,6 @@ function getSunCoords(d) {
 SunCalc = {};
 
 
-// calculates sun position for a given date and latitude/longitude
-
-SunCalc.getPosition = function (date, lat, lng) {
-
-    var lw = rad * -lng,
-        phi = rad * lat,
-        d = toDays(date),
-
-        c = getSunCoords(d),
-        H = getSiderealTime(d, lw) - c.ra;
-
-    return {
-        azimuth: getAzimuth(H, phi, c.dec),
-        altitude: getAltitude(H, phi, c.dec)
-    };
-};
-
-
-// sun times configuration (angle, morning name, evening name)
-
-var times = [
-    [-0.83, 'sunrise', 'sunset' ],
-    [ -0.3, 'sunriseEnd', 'sunsetStart' ],
-    [ -6, 'dawn', 'dusk' ],
-    [ -12, 'nauticalDawn', 'nauticalDusk'],
-    [ -18, 'nightEnd', 'night' ],
-    [ 6, 'goldenHourEnd', 'goldenHour' ]
-];
-
-// adds a custom time to the times config
-
-SunCalc.addTime = function (angle, riseName, setName) {
-    times.push([angle, riseName, setName]);
-};
-
-
-// calculations for sun times
-
-var J0 = 0.0009;
-
-function getJulianCycle(d, lw) {
-    return Math.round(d - J0 - lw / (2 * PI));
-}
-function getApproxTransit(Ht, lw, n) {
-    return J0 + (Ht + lw) / (2 * PI) + n;
-}
-function getSolarTransitJ(ds, M, L) {
-    return J2000 + ds + 0.0053 * sin(M) - 0.0069 * sin(2 * L);
-}
-function getHourAngle(h, phi, d) {
-    return acos((sin(h) - sin(phi) * sin(d)) / (cos(phi) * cos(d)));
-}
-
-
-// calculates sun times for a given date and latitude/longitude
-
-SunCalc.getTimes = function (date, lat, lng) {
-
-    var lw = rad * -lng,
-        phi = rad * lat,
-        d = toDays(date),
-
-        n = getJulianCycle(d, lw),
-        ds = getApproxTransit(0, lw, n),
-
-        M = getSolarMeanAnomaly(ds),
-        C = getEquationOfCenter(M),
-        L = getEclipticLongitude(M, C),
-
-        dec = getDeclination(L, 0),
-
-        Jnoon = getSolarTransitJ(ds, M, L);
-
-
-    // returns set time for the given sun altitude
-    function getSetJ(h) {
-        var w = getHourAngle(h, phi, dec),
-            a = getApproxTransit(w, lw, n);
-
-        return getSolarTransitJ(a, M, L);
-    }
-
-
-    var result = {
-        solarNoon: fromJulian(Jnoon),
-        nadir: fromJulian(Jnoon - 0.5)
-    };
-
-    var i, len, time, angle, morningName, eveningName, Jset, Jrise;
-
-    for (i = 0, len = times.length; i < len; i += 1) {
-        time = times[i];
-
-        Jset = getSetJ(time[0] * rad);
-        Jrise = Jnoon - (Jset - Jnoon);
-
-        result[time[1]] = fromJulian(Jrise);
-        result[time[2]] = fromJulian(Jset);
-    }
-
-    return result;
-};
-
-
 // moon calculations, based on http://aa.quae.nl/en/reken/hemelpositie.html formulas
 
 function getMoonCoords(d) { // geocentric ecliptic coordinates of the moon
@@ -594,26 +472,6 @@ function getMoonCoords(d) { // geocentric ecliptic coordinates of the moon
         dist: dt
     };
 }
-
-SunCalc.getMoonPosition = function (date, lat, lng) {
-
-    var lw = rad * -lng,
-        phi = rad * lat,
-        d = toDays(date),
-
-        c = getMoonCoords(d),
-        H = getSiderealTime(d, lw) - c.ra,
-        h = getAltitude(H, phi, c.dec);
-
-    // altitude correction for refraction
-    h = h + rad * 0.017 / tan(h + rad * 10.26 / (h + rad * 5.10));
-
-    return {
-        azimuth: getAzimuth(H, phi, c.dec),
-        altitude: h,
-        distance: c.dist
-    };
-};
 
 
 // calculations for illumination parameters of the moon,
@@ -651,168 +509,3 @@ if (typeof define === 'function' && define.amd) {
 }
 
 }());
-
-
-/* Now, 155 lines of base64 decoding, to work around two issues:
- *  1)  Something in the e.response process is mangling 2-byte UTF8 characters into two 1-byte characters
- *  2)  Ejecta JSCore doesn't have an atob() function, so we must provide our own...
- *
- * Should Ejecta JSCore gain the atob() function, or the bug be fixed, I anticipate removing this.
- *
- *  ... leaving the encode functions in case I ever need to send, because, why not.
- */
-
-/*
- * Copyright (c) 2010 Nick Galbreath
- * http://code.google.com/p/stringencoders/source/browse/#svn/trunk/javascript
- *
- * Permission is hereby granted, free of charge, to any person
- * obtaining a copy of this software and associated documentation
- * files (the "Software"), to deal in the Software without
- * restriction, including without limitation the rights to use,
- * copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following
- * conditions:
- *
- * The above copyright notice and this permission notice shall be
- * included in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
- * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
- * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
- * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
- * OTHER DEALINGS IN THE SOFTWARE.
-*/
-
-/* base64 encode/decode compatible with window.btoa/atob
- *
- * window.atob/btoa is a Firefox extension to convert binary data (the "b")
- * to base64 (ascii, the "a").
- *
- * It is also found in Safari and Chrome.  It is not available in IE.
- *
- * if (!window.btoa) window.btoa = base64.encode
- * if (!window.atob) window.atob = base64.decode
- *
- * The original spec's for atob/btoa are a bit lacking
- * https://developer.mozilla.org/en/DOM/window.atob
- * https://developer.mozilla.org/en/DOM/window.btoa
- *
- * window.btoa and base64.encode takes a string where charCodeAt is [0,255]
- * If any character is not [0,255], then an exception is thrown.
- *
- * window.atob and base64.decode take a base64-encoded string
- * If the input length is not a multiple of 4, or contains invalid characters
- *   then an exception is thrown.
- */
-base64 = {};
-base64.PADCHAR = '=';
-base64.ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-base64.getbyte64 = function(s,i) {
-    // This is oddly fast, except on Chrome/V8.
-    //  Minimal or no improvement in performance by using a
-    //   object with properties mapping chars to value (eg. 'A': 0)
-    var idx = base64.ALPHA.indexOf(s.charAt(i));
-    if (idx == -1) {
-        throw "Cannot decode base64";
-    }
-    return idx;
-}
-
-base64.decode = function(s) {
-    // convert to string
-    s = "" + s;
-    var getbyte64 = base64.getbyte64;
-    var pads, i, b10;
-    var imax = s.length
-    if (imax == 0) {
-        return s;
-    }
-
-    if (imax % 4 != 0) {
-        throw "Cannot decode base64";
-    }
-
-    pads = 0
-    if (s.charAt(imax -1) == base64.PADCHAR) {
-        pads = 1;
-        if (s.charAt(imax -2) == base64.PADCHAR) {
-            pads = 2;
-        }
-        // either way, we want to ignore this last block
-        imax -= 4;
-    }
-
-    var x = [];
-    for (i = 0; i < imax; i += 4) {
-        b10 = (getbyte64(s,i) << 18) | (getbyte64(s,i+1) << 12) |
-            (getbyte64(s,i+2) << 6) | getbyte64(s,i+3);
-        x.push(String.fromCharCode(b10 >> 16, (b10 >> 8) & 0xff, b10 & 0xff));
-    }
-
-    switch (pads) {
-    case 1:
-        b10 = (getbyte64(s,i) << 18) | (getbyte64(s,i+1) << 12) | (getbyte64(s,i+2) << 6)
-        x.push(String.fromCharCode(b10 >> 16, (b10 >> 8) & 0xff));
-        break;
-    case 2:
-        b10 = (getbyte64(s,i) << 18) | (getbyte64(s,i+1) << 12);
-        x.push(String.fromCharCode(b10 >> 16));
-        break;
-    }
-    return x.join('');
-}
-
-base64.getbyte = function(s,i) {
-    var x = s.charCodeAt(i);
-    if (x > 255) {
-        throw "INVALID_CHARACTER_ERR: DOM Exception 5";
-    }
-    return x;
-}
-
-
-base64.encode = function(s) {
-    if (arguments.length != 1) {
-        throw "SyntaxError: Not enough arguments";
-    }
-    var padchar = base64.PADCHAR;
-    var alpha   = base64.ALPHA;
-    var getbyte = base64.getbyte;
-
-    var i, b10;
-    var x = [];
-
-    // convert to string
-    s = "" + s;
-
-    var imax = s.length - s.length % 3;
-
-    if (s.length == 0) {
-        return s;
-    }
-    for (i = 0; i < imax; i += 3) {
-        b10 = (getbyte(s,i) << 16) | (getbyte(s,i+1) << 8) | getbyte(s,i+2);
-        x.push(alpha.charAt(b10 >> 18));
-        x.push(alpha.charAt((b10 >> 12) & 0x3F));
-        x.push(alpha.charAt((b10 >> 6) & 0x3f));
-        x.push(alpha.charAt(b10 & 0x3f));
-    }
-    switch (s.length - imax) {
-    case 1:
-        b10 = getbyte(s,i) << 16;
-        x.push(alpha.charAt(b10 >> 18) + alpha.charAt((b10 >> 12) & 0x3F) +
-               padchar + padchar);
-        break;
-    case 2:
-        b10 = (getbyte(s,i) << 16) | (getbyte(s,i+1) << 8);
-        x.push(alpha.charAt(b10 >> 18) + alpha.charAt((b10 >> 12) & 0x3F) +
-               alpha.charAt((b10 >> 6) & 0x3f) + padchar);
-        break;
-    }
-    return x.join('');
-}

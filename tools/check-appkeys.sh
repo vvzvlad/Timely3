@@ -3,9 +3,7 @@
 # package.json's "messageKeys" (same names -> same numbers). The three config
 # layers must agree (AGENTS.md); a silent drift here breaks settings on the wire.
 #
-# Name mapping: AK_STYLE_INV -> style_inv (drop the AK_ prefix, lowercase). The
-# single accepted exception is AK_TRANS_ALARM (519) <-> TODO___trans_alarm: the
-# key is still unused on the phone side and keeps its placeholder name.
+# Name mapping: AK_STYLE_INV -> style_inv (drop the AK_ prefix, lowercase).
 set -eu
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
@@ -13,10 +11,9 @@ akf=$(mktemp)
 mkf=$(mktemp)
 trap 'rm -f "$akf" "$mkf"' EXIT
 
-# name=number from the C #defines, lowercased, with the accepted rename applied.
+# name=number from the C #defines, lowercased.
 grep -oE '#define AK_[A-Z0-9_]+ +[0-9]+' src/Timely.c \
   | awk '{ gsub("AK_", "", $2); print tolower($2) "=" $3 }' \
-  | sed 's/^trans_alarm=/TODO___trans_alarm=/' \
   | sort > "$akf"
 
 # name=number from package.json messageKeys.
