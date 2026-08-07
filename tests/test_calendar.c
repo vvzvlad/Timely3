@@ -72,6 +72,35 @@ UTEST(calendar, january_prev_december_wrap) {
   ASSERT_EQ(2,  g.days[12]);  // today, Jan 2
 }
 
+// M2: an out-of-range wday (e.g. a corrupted 255) must not index the grid out of
+// bounds — calendar_build clamps wday into 0..6 at entry, so the result equals
+// the clamped-equivalent build and every one of the 21 cells is a valid day.
+UTEST(calendar, out_of_range_wday_clamped_fills_grid) {
+  CalGrid bad  = calendar_build(2026, 5, 4, 255, 0, 0); // 255 % 7 == 3
+  CalGrid good = calendar_build(2026, 5, 4, 3,   0, 0);
+  ASSERT_EQ(good.special_col, bad.special_col);
+  ASSERT_EQ(good.special_row, bad.special_row);
+  ASSERT_TRUE(bad.special_col >= 0 && bad.special_col <= 6);
+  ASSERT_TRUE(bad.special_row >= 1 && bad.special_row <= 3);
+  for (int i = 0; i < 21; i++) {
+    ASSERT_EQ(good.days[i], bad.days[i]);
+    ASSERT_TRUE(bad.days[i] >= 1 && bad.days[i] <= 31); // every cell populated, in range
+  }
+}
+
+// M2: a corrupted dow_offset is likewise clamped, keeping specialDay in-bounds
+// and filling all cells (255 % 7 == 3).
+UTEST(calendar, out_of_range_offset_clamped_fills_grid) {
+  CalGrid bad  = calendar_build(2026, 5, 4, 4, 255, 0);
+  CalGrid good = calendar_build(2026, 5, 4, 4, 3,   0);
+  ASSERT_EQ(good.special_col, bad.special_col);
+  ASSERT_EQ(good.special_row, bad.special_row);
+  ASSERT_TRUE(bad.special_col >= 0 && bad.special_col <= 6);
+  for (int i = 0; i < 21; i++) {
+    ASSERT_TRUE(bad.days[i] >= 1 && bad.days[i] <= 31);
+  }
+}
+
 // December boundary: the trailing cells must roll over into January of the next
 // year (day numbers restart at 1), driven by daysThisMonth = daysInMonth(11).
 // Anchor: Wed 30 Dec 2026 (wday=3), Sunday start.

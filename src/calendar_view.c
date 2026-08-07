@@ -50,7 +50,7 @@ static void calendar_render(Layer *me, GContext* ctx) {
 
       // Adjust labels by specified offset
       int weekday = col + settings_get()->dayOfWeekOffset;
-      if (weekday > 6) { weekday -= 7; }
+      weekday %= 7; // keep index in 0..6 even if the offset is out of range
       bool weekend = (weekday == 0 || weekday == 6); // Sun / Sat
       graphics_context_set_text_color(ctx, weekend ? pal.weekend : pal.fg);
 
@@ -107,7 +107,7 @@ static void calendar_render(Layer *me, GContext* ctx) {
 
         if (!(row == specialRow && col == specialDay)) {
           int wd = col + settings_get()->dayOfWeekOffset;
-          if (wd > 6) { wd -= 7; }
+          wd %= 7; // keep index in 0..6 even if the offset is out of range
           graphics_context_set_text_color(ctx, (wd == 0 || wd == 6) ? pal.weekend : pal.fg);
         }
         // draw the cell text

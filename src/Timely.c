@@ -51,11 +51,19 @@ static int s_climacons_size = 0; // loaded climacons px; 0 = not loaded yet
 // on settings toggles that resize the time band.
 static void ensure_climacons(int size) {
   if (size == s_climacons_size) { return; }
-  if (climacons) { fonts_unload_custom_font(climacons); }
-  climacons = fonts_load_custom_font(resource_get_handle(
+  // Load into a temp first; only unload the old handle and adopt the new size
+  // when the load succeeds. On OOM (real at 48px) fonts_load_custom_font returns
+  // NULL, so keep the currently-loaded font rather than drawing through NULL.
+  GFont loaded = fonts_load_custom_font(resource_get_handle(
     size == 48 ? RESOURCE_ID_FONT_CLIMACONS_48 :
     size == 40 ? RESOURCE_ID_FONT_CLIMACONS_40 :
                  RESOURCE_ID_FONT_CLIMACONS_28));
+  if (loaded == NULL) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "ensure_climacons: font load failed for size %d, keeping old", size);
+    return;
+  }
+  if (climacons) { fonts_unload_custom_font(climacons); }
+  climacons = loaded;
   s_climacons_size = size;
   weather_set_glyph_size(size);
 }
@@ -93,7 +101,13 @@ static bool bluetooth_connected = false;
 // suppress vibration
 static bool vibe_suppression = true;
 int8_t timezone_offset = TIMEZONE_UNINITIALIZED;
-struct tm *currentTime;
+// Own backing store for "now" so currentTime never aliases libc's static
+// localtime()/gmtime() buffer (which any future date call would overwrite).
+// currentTime points at our own storage (was libc's static localtime buffer, which
+// any future localtime/gmtime call would silently overwrite). It is therefore never
+// NULL now — the old `if (!currentTime)` fallbacks downstream are vestigial but harmless.
+static struct tm s_now;
+struct tm *currentTime = &s_now;
 static int8_t seconds_shown = 0;
 static bool dnd_period_active = false;
 static bool vibe_period_active = false;
@@ -487,10 +501,14 @@ static void sun_time_text(TextLayer *layer, char *buf, bool want_sunset) {
       tl_parse_coord(adv_settings_get()->weather_lon, &lon)) {
     sun_times(lat, lon, currentTime->tm_yday, -timezone_offset / 4.0f, &sr, &ss);
     float h = want_sunset ? ss : sr;
+    // Normalize the fractional hour into [0,24) BEFORE splitting: (int) truncates
+    // toward zero, so a negative h (tz running ahead of solar time at high lat)
+    // would otherwise give hh/mm the wrong sign and print an hour late.
+    while (h < 0.0f)   { h += 24.0f; }
+    while (h >= 24.0f) { h -= 24.0f; }
     int hh = (int)h, mm = (int)((h - hh) * 60 + 0.5f);
-    if (mm >= 60) { mm -= 60; hh++; }
-    hh = ((hh % 24) + 24) % 24; // wrap to 0-23 (also bounds the format width)
-    mm = ((mm % 60) + 60) % 60; // wrap to 0-59
+    if (mm >= 60) { mm -= 60; hh++; } // rounding may carry into the next hour
+    hh %= 24;                          // wrap 23:60 -> 00:00
     snprintf(buf, 16, "%d:%02d", hh, mm);
     text_layer_set_text(layer, buf);
   } else {
@@ -1375,8 +1393,17 @@ void set_layer_attr_cfont(TextLayer *textlayer, uint32_t FontResHandle, GTextAli
 
 static void window_load(Window *window) {
 
-  unifont_16 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_UNICODE_16));
-  unifont_16_bold = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_UNICODE_BOLD_16));
+  // Check each load: adopt the new handle only on success, otherwise keep the
+  // previous one (NULL on first load) and warn, rather than storing a NULL font.
+  GFont uni = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_UNICODE_16));
+  if (uni) { unifont_16 = uni; } else { APP_LOG(APP_LOG_LEVEL_WARNING, "unifont_16 load failed"); }
+  GFont uni_bold = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_UNICODE_BOLD_16));
+  if (uni_bold) { unifont_16_bold = uni_bold; } else { APP_LOG(APP_LOG_LEVEL_WARNING, "unifont_16_bold load failed"); }
+  // Never leave these NULL: a first-load failure (OOM) would otherwise be handed to
+  // graphics_draw_text as a NULL GFont via cal_normal/cal_bold and set_unifont().
+  // Fall back to a system font so every consumer has a valid handle (cf. effects.c).
+  if (!unifont_16)      { unifont_16      = fonts_get_system_font(FONT_KEY_GOTHIC_14); }
+  if (!unifont_16_bold) { unifont_16_bold = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD); }
   cal_normal = unifont_16;
   cal_bold   = unifont_16_bold;
 
@@ -1885,7 +1912,8 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
     // INTL_DOWO == dayOfWeekOffset
     Tuple *INTL_DOWO = dict_find(received, AK_INTL_DOWO);
     if (INTL_DOWO != NULL) {
-      settings_get()->dayOfWeekOffset = INTL_DOWO->value->uint8;
+      uint8_t dowo = INTL_DOWO->value->uint8;
+      if (dowo <= 6) { settings_get()->dayOfWeekOffset = dowo; } // reject out-of-range; keep previous
     }
 
     // AK_INTL_FMT_DATE == date format (strftime + manual localization)
@@ -2298,7 +2326,10 @@ static void init(void) {
 
   if (DEBUGLOG == 1) { debug_get()->general = true; }
   if (TRANSLOG == 1) { debug_get()->language = true; }
-  currentTime = get_time();
+  // Seed our own store from libc localtime once; currentTime already points at
+  // s_now, and the minute/second ticks write through it (never re-aliasing).
+  struct tm *now = get_time();
+  if (now) { s_now = *now; }
 
   app_message_init();
 
@@ -2310,6 +2341,7 @@ static void init(void) {
     }
     // Clamp whatever we loaded/migrated to the renderer's safe set.
     settings_get()->date_format = datefmt_clamp(settings_get()->date_format);
+    settings_get()->dayOfWeekOffset %= 7; // keep 0..6 so calendar indexing stays in bounds
     if (persist_exists(PK_LANG_GEN)) {
       persist_read_data(PK_LANG_GEN, lang_gen_get(), sizeof(persist_general_lang) );
     }

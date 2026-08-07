@@ -4,6 +4,10 @@
 CalGrid calendar_build(int year, int mon, int mday, int wday,
                        int dow_offset, int week_pattern) {
   CalGrid g;
+  // Defensive: keep wday in 0..6 so grid indexing never runs off the ends even
+  // if a corrupted tm_wday (or offset) reaches us (audit M2).
+  wday = ((wday % 7) + 7) % 7;
+  dow_offset = ((dow_offset % 7) + 7) % 7;
   int daysThisMonth = daysInMonth(mon, year);
   int specialDay = wday - dow_offset;
 

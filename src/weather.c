@@ -46,7 +46,10 @@ static void weather_render(Layer *me, GContext *ctx) {
   // Tint the condition glyph (color platforms, non-Mono theme); the temperature
   // stays the theme color, so restore it afterwards.
   graphics_context_set_text_color(ctx, weather_glyph_color(cond_current[0]));
-  graphics_draw_text(ctx, cond_current, climacons, GRect(2, top, icon_w, gap + 8), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+  // Skip the glyph if the climacons font failed to load (draw-through-NULL guard).
+  if (climacons) {
+    graphics_draw_text(ctx, cond_current, climacons, GRect(2, top, icon_w, gap + 8), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+  }
   graphics_context_set_text_color(ctx, theme_palette().fg);
   graphics_draw_text(ctx, temp_current, temp_font, GRect(2, top + gap, icon_w + 2, temp_h + 8), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
   if (debug_get()->general) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Weather redrawing: %d, %s", weather_state()->current, weather_state()->condition); }
