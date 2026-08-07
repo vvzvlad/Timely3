@@ -21,6 +21,7 @@ jobs:
         run: |
           gcc -std=c11 -Wall -Wextra -Isrc -Itests tests/test_*.c \
             src/layout.c src/calendar.c src/suntimes.c src/timefmt.c src/vibes.c src/math.c \
+            src/complications.c src/settings.c src/locale.c \
             -lm -o timely_utest
           ./timely_utest
 
