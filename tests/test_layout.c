@@ -53,6 +53,14 @@ UTEST(layout, bands_collapse_and_sum) {
   ASSERT_TRUE(b.clock_time.y + b.clock_time.h <= b.slot_top.h);
 }
 
+// Wide-screen predicate: single source of truth for the >= 180px threshold.
+// Behavior-preserving: 180 (chalk) still classifies as wide.
+UTEST(widescreen, threshold_at_180) {
+  ASSERT_EQ(false, layout_is_wide(144));
+  ASSERT_EQ(true,  layout_is_wide(180));
+  ASSERT_EQ(true,  layout_is_wide(200));
+}
+
 // Pure clock-font selection: scales with band height; Roboto only on wide+tall.
 UTEST(clockfont, scales_with_band_and_width) {
   // clock_font_for returns the ClockFont enum (unsigned); cast to int so the
