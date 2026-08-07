@@ -577,8 +577,9 @@ void update_timezone_text(TextLayer *which_layer) {
   text_layer_set_text(which_layer, timezone_text);
 }
 
-// All three below-time slots ("complications") share the same content menu.
-// Keep these values in sync with src/js/config.js.
+// All six configurable slots ("complications") share the same content menu:
+// the status-bar, above-time and above-calendar rows, each with a left and a
+// right slot. Keep these values in sync with src/js/config.js.
 void update_slot_text(TextLayer *layer, uint8_t content) {
   switch (content) {
   case 1:  update_day_text(layer);       break; // Day name

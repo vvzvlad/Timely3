@@ -46,7 +46,17 @@ Rebble guides:
 **Keywords / tags:** calendar, weather, complications, date, week number,
 battery, moon phase, world time, minimal, localizable
 
+**External services (for the app's privacy/data disclosure):** weather comes
+from Open‑Meteo over HTTPS with no API key. When the "weather location"
+complication is used, the app also sends the coordinates — rounded to
+**2 decimal places** — to `api.bigdatacloud.net` to resolve a city name for the
+weather line. No other network access; configuration is fully offline.
+
 ## Release notes — v0.0.7
+
+**Known issue:** the currently published v0.0.7 artifact fails to start on
+emery (invalid app relocation). A fix is prepared and awaits a re-release;
+publish the corrected build before relying on these notes.
 
 > • Status icons (charging, Do Not Disturb, hourly vibe) now sit in a tray
 >   under the clock on large screens, side by side — no more overlap with the

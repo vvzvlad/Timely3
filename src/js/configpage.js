@@ -208,6 +208,9 @@ function buildConfigPage(spec, current) {
   for (var s = 0; s < spec.length; s++) {
     var sec = spec[s];
     body += '<details' + (sec.open === false ? '' : ' open') + '><summary>' + esc(sec.title) + '</summary>';
+    // Section-level explanation (e.g. the row model), shown once under the title
+    // before the fields. Additive: field rendering below is unchanged.
+    if (sec.note) { body += '<div class="note">' + esc(sec.note) + '</div>'; }
     for (var i = 0; i < sec.fields.length; i++) {
       var f = sec.fields[i];
       body += renderField(f, current);

@@ -53,7 +53,9 @@ Compared to the classic Timely and its forks, TimelyNG adds:
 - **Complications** (shared menu): date, day, month, week number,
   day‑of‑year / days‑left, seconds, AM/PM, timezone, a second time zone,
   sunrise, sunset, moon phase, weather location, watch/phone battery, Bluetooth.
-- **Weather:** condition icon + temperature (Open‑Meteo).
+- **Weather:** condition icon + temperature (Open‑Meteo). For the "weather
+  location" complication the app also sends the coordinates, rounded to
+  **2 decimal places**, to `api.bigdatacloud.net` to resolve a city name.
 - **Calendar:** previous / current / next week, today accented on colour
   watches.
 - Vibration (hourly, on disconnect / reconnect), Do‑Not‑Disturb, themes and
