@@ -33,3 +33,9 @@ jobs:
             echo "checking $f"
             node --check "$f"
           done
+
+      # Wire-contract round-trip tests (configpage -> app.js): the T4 codec/
+      # coverage checks and the T2 settings-loss regressions that drive the real
+      # webviewclosed handler. Fails CI on any settings-loss regression.
+      - name: JS round-trip tests
+        run: node --test tests/js/

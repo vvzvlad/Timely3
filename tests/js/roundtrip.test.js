@@ -9,16 +9,21 @@
 //   - over-max clamped         : 999 clamped to the field's max, not a uint8 wrap
 //   - wrong-length rejected     : a mis-sized n[] is refused, not applied misaligned
 //
-// Run: node tests/js/roundtrip.test.js   (or: make test-js)
+// Run: node --test tests/js/   (or: make test-js)
+//
+// Migrated to the built-in node:test runner (issue #6: "node --test гоняется в
+// CI"). Every original assertion below is preserved verbatim — they guard stages
+// 3/4/5 (wire codec, payload budget, language/translation fixes). The runner
+// change is mechanical: the hand-rolled `test()` helper is replaced by
+// node:test's, so each `test(name, fn)` case is now discovered by `node --test`.
 
-var assert = require('assert');
+var test = require('node:test');
+var assert = require('node:assert');
 var wirec = require('../../src/js/wirec');
 var WIRE_KEYS = require('../../src/js/wirekeys');
 var CONFIG_SPEC = require('../../src/js/config');
 
 var CLAMP = wirec.clampFromSpec(CONFIG_SPEC);
-var pass = 0;
-function test(name, fn) { fn(); pass++; console.log('  ok - ' + name); }
 
 // A fully-populated, in-range settings object: each wire key gets a distinct
 // small integer (<= 100, so nothing trips the show_stat_batt 0..100 clamp).
@@ -253,5 +258,3 @@ test('C3: langSelFor keeps Custom persisted, otherwise resolves the language', f
   // An unknown language falls back to Custom (existing strings preserved).
   assert.strictEqual(buildConfigPage.langSelFor({ language: 'ZZ' }), 'custom');
 });
-
-console.log('\nAll ' + pass + ' JS round-trip tests passed.');

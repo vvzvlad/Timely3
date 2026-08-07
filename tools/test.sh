@@ -18,6 +18,12 @@ gcc -std=c11 -DUNIT_TEST -Isrc -Itests tests/test_*.c \
 "$out"
 rm -f "$out"
 
+echo "== JS round-trip tests =="
+# Wire-contract round-trip coverage (configpage -> app.js) via the built-in
+# node:test runner: T4 codec/coverage + T2 settings-loss regressions driving the
+# real webviewclosed handler. No npm deps.
+node --test tests/js/
+
 echo "== pebble build =="
 pebble build >/dev/null
 
