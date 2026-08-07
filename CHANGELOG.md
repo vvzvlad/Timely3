@@ -15,6 +15,9 @@ in [`PUBLISHING.md`](PUBLISHING.md).
   of a single priority-picked one. Small screens keep the status-bar icon,
   now repositioned clear of the battery bar.
 
+  > **Known issue:** the published v0.0.7 artifact fails to start on emery
+  > (invalid app relocation). A fix is prepared and awaits a re-release.
+
 ## 0.0.6
 
 - Fix the phone-battery complication always showing empty on a real watch:

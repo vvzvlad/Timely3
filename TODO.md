@@ -24,13 +24,9 @@ Future work for TimelyNG. Roughly ordered by priority.
 - Revisit weather error/backoff behaviour for flaky phone links.
 
 ## Project / infra
-- **Add a `LICENSE`** (the upstream Timely/PebbleTimely license should be
-  checked and honoured; pick a compatible one).
 - **CI: add the full SDK build** (per-platform `pebble build` + `tools/test.sh`
   strict-check) once a stable Core Devices Pebble SDK container image is
   available. CI currently runs the host unit tests + JS syntax check.
-- Add appstore screenshots/banner under a `marketing/` folder (see
-  `PUBLISHING.md`).
 
 ## Known limitations
 - The weather location name is only shown when picked as the "Location"

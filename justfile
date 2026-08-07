@@ -8,7 +8,7 @@
 cc     := env_var_or_default("CC", "cc")
 cflags := "-std=c11 -Wall -Wextra -Isrc -Itests"
 build  := "build"
-emu    := env_var_or_default("EMU", "emery")   # aplite|basalt|chalk|diorite|emery|flint
+emu    := env_var_or_default("EMU", "emery")   # basalt|diorite|emery|flint
 shot   := build / ("screenshot-" + emu + ".png")
 test_src := "tests/test_*.c src/timefmt.c src/layout.c src/calendar.c src/vibes.c src/suntimes.c src/math.c"
 
@@ -73,7 +73,7 @@ _pick-emu:
     #!/usr/bin/env bash
     if [ -n "${EMU:-}" ]; then echo "$EMU"
     elif command -v gum >/dev/null 2>&1; then
-        gum choose --header "Emulator platform:" emery flint basalt diorite aplite
+        gum choose --header "Emulator platform:" emery flint basalt diorite
     else echo emery; fi
 
 # build, install, and open the offline config page to test themes (guided)
@@ -114,7 +114,7 @@ menu:
         ip=$(gum input --placeholder "phone IP (Pebble app → Developer Connection)")
         pebble build && pebble install --phone "$ip"; exit 0 ;;
     esac
-    p=$(gum choose --header "Emulator platform:" emery flint basalt diorite aplite)
+    p=$(gum choose --header "Emulator platform:" emery flint basalt diorite)
     pebble build
     case "$action" in
       "Run on emulator")    pebble install --emulator "$p" ;;

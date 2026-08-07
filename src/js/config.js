@@ -7,7 +7,8 @@ var VIBES = [
   ['Long', 4], ['Min', 5], ['Min 2', 6], ['Ow', 7]
 ];
 
-// Complication menu shared by the two slots above the calendar.
+// Complication menu shared by all six configurable slots (the status-bar,
+// above-time and above-calendar rows, each with a left and a right slot).
 // Values must match update_slot_text() in Timely.c.
 // [label, value]; value must match update_slot_text() in Timely.c. Displayed
 // alphabetically (— pinned first), so new entries can be appended in any order.

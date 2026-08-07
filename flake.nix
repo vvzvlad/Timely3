@@ -11,7 +11,7 @@
   # Usage (official Pebble SDK flow, https://developer.repebble.com/sdk/):
   #   nix develop
   #   pebble sdk install latest          # first time only; caches in ~/.pebble-sdk
-  #   pebble build                       # produces build/PebbleTimely.pbw
+  #   pebble build                       # produces build/TimelyNG.pbw
   #   pebble install --emulator emery    # color emulator (or basalt/flint/...)
   #   pebble login && pebble install --cloudpebble   # push to a paired watch
   # Host unit tests (pure modules in src/, no Pebble SDK):

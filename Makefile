@@ -12,7 +12,7 @@ TEST_BIN := $(BUILD)/test_suite
 # everywhere; only the host-compilable pure modules from src/ are linked.
 TEST_SRC := $(wildcard tests/test_*.c) src/timefmt.c src/layout.c src/calendar.c src/vibes.c src/suntimes.c src/math.c
 
-# emulator platform: aplite | basalt | chalk | diorite | emery | flint
+# emulator platform: basalt | diorite | emery | flint
 EMU  ?= emery
 SHOT ?= $(BUILD)/screenshot-$(EMU).png
 
