@@ -27,6 +27,10 @@ _build-tests:
 test-clean:
     rm -f {{build}}/test_suite {{build}}/test-results.xml
 
+## ---- PebbleKit JS host test (node; no SDK / no npm deps) ----
+test-js:
+    node tests/js/roundtrip.test.js
+
 ## ---- Pebble app + emulator ----
 # compile the .pbw
 build:

@@ -1,6 +1,7 @@
 'use strict';
 
 var WIRE_KEYS = require('./wirekeys'); // numeric settings sent positionally (see below)
+var wirec = require('./wirec'); // pure encode + clamp, shared with the browser page and app.js
 
 // Builds the offline settings page as a self-contained HTML string from the
 // config spec. No external CSS/JS/host: app.js serves it via a data: URI, so it
@@ -191,6 +192,13 @@ function buildConfigPage(spec, current) {
     var dflt = (derived[d2] === 'language') ? 'EN' : 0;
     baseline[derived[d2]] = (current[derived[d2]] != null) ? current[derived[d2]] : dflt;
   }
+  // Inline the pure encoder by its OWN source + own name (survives a bundler that
+  // renames/anonymises it). __wn (not `n`) holds the result so a rename to a short
+  // name can never collide with the result variable.
+  var encSrc = wirec.encodeN.toString();
+  var encName = (encSrc.match(/function\s+([A-Za-z0-9_$]+)/) || [])[1];
+  var encInline = encName ? encSrc : ('var encodeN=' + encSrc);
+  var encCall = encName || 'encodeN';
   var script =
     // Read return_to from the full href: data:/file: URIs do not populate
     // location.search, but the emulator appends ?return_to= and the encoded page
@@ -200,6 +208,14 @@ function buildConfigPage(spec, current) {
     'var RET=qp("return_to","pebblejs://close#");' +
     'var BASELINE=' + JSON.stringify(baseline) + ';' +
     'var WK=' + JSON.stringify(WIRE_KEYS) + ';' +
+    // Declared min/max bounds (from config.js) so the page clamps before sending.
+    'var CLAMP=' + JSON.stringify(wirec.clampFromSpec(spec)) + ';' +
+    // The exact same pure encoder app.js/tests use — inlined so the browser page
+    // (which has no require) runs identical NaN-guard + clamp logic (see wirec.js).
+    // Derive the call name from the function's OWN source so a bundler that renames
+    // (or anonymises) the top-level `encodeN` can never diverge the definition from
+    // the call site below (a silent config-save death). Single source of truth.
+    encInline + ';' +
     'var LANGS=' + JSON.stringify(LANGS) + ';' +
     // Language selector: resolve the chosen code, fill the (hidden) translation
     // fields from the table, and toggle the Custom editor.
@@ -248,8 +264,8 @@ function buildConfigPage(spec, current) {
     // payload tiny so a real watch carries it without truncation (the old verbose
     // per-key dump got dropped). The two short string settings ride along by name,
     // and changed translation strings are appended (delta — they are bulk).
-    'var n=[];for(var wi=0;wi<WK.length;wi++){var wv=o[WK[wi]];n.push(wv==null?0:wv);}' +
-    'var send={n:n};' +
+    'var __wn=' + encCall + '(o,WK,CLAMP);' +
+    'var send={n:__wn};' +
     'if(o.strftime_format!=null)send.strftime_format=o.strftime_format;' +
     'if(o.language!=null)send.language=o.language;' +
     'for(var k in o){if(k.indexOf("trans_")===0&&String(o[k])!==String(BASELINE[k]))send[k]=o[k];}' +
