@@ -3,6 +3,21 @@
 #include <stdlib.h>
 #include <time.h>
 
+// Minimal "[-]int[.frac]" coordinate parser (Pebble libc lacks atof). Canonical
+// copy; formerly duplicated verbatim as tl_parse_coord (Timely.c) and parse_coord
+// (theme.c).
+bool parse_coord(const char *s, float *out) {
+  if (!s || !s[0]) return false;
+  int sign = 1; const char *p = s;
+  if (*p == '-') { sign = -1; p++; } else if (*p == '+') { p++; }
+  long ip = 0; float frac = 0.0f, scale = 0.1f; bool any = false;
+  while (*p >= '0' && *p <= '9') { ip = ip * 10 + (*p - '0'); p++; any = true; }
+  if (*p == '.') { p++; while (*p >= '0' && *p <= '9') { frac += (*p - '0') * scale; scale *= 0.1f; p++; any = true; } }
+  if (!any) return false;
+  *out = sign * (ip + frac);
+  return true;
+}
+
 int daysInMonth(int mon, int year) {
   mon++; // callers pass 0-based months (0 = January)
   if (mon == 4 || mon == 6 || mon == 9 || mon == 11) {
@@ -49,11 +64,11 @@ void format_timezone_offset(int tz_offset, char *buf, size_t n) {
   }
 }
 
-const char *datefmt_table_entry(uint8_t date_format) {
-  // 60 non-localized strftime formats for date_format codes 195..254
-  // (index = code - 195). Copied verbatim, in order, from the old inline table
-  // in Timely.c format_current_date().
-  static const char *const datestr[] = {
+// 60 non-localized strftime formats for date_format codes 195..254
+// (index = code - 195). Copied verbatim, in order, from the old inline table
+// in Timely.c format_current_date(). File-scope static const so the pointer
+// array lives once in .rodata and is not rebuilt on the stack per call.
+static const char *const datestr[] = {
     // MM DD YYYY (%m %d %Y)
     "%m.%d.%Y", // 195 MM.DD.YYYY
     "%m-%d-%Y", // 196 MM-DD-YYYY
@@ -126,7 +141,9 @@ const char *datefmt_table_entry(uint8_t date_format) {
     "%y/%m/%e", // 252 YY/MM/dd
     "%y %m %e", // 253 YY MM dd
     "%y%m%e",   // 254 YYMMdd
-  };
+};
+
+const char *datefmt_table_entry(uint8_t date_format) {
   if (date_format < 195 || date_format > 254) return NULL;
   return datestr[date_format - 195];
 }

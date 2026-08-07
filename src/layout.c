@@ -34,8 +34,7 @@ TimelyLayout layout_compute_rows(int width, int height, int has_top, int has_cen
 
   // statusbar internals (battery right-aligned; icons mirror the 144x168 look)
   L.battery     = (LayoutRect){ width - 48, 4, 44, 15 };
-  L.bt_icon_x   = -2; L.bt_icon_y = 2;
-  L.chrg_icon_x = width - 68; L.chrg_icon_y = 2;
+  L.chrg_icon_x = width - 68;
 
   // Bands inside slot_top, stacked: CENTER (top), time/weather, BOTTOM (bottom).
   // All relative to slot_top's origin.
@@ -45,8 +44,6 @@ TimelyLayout layout_compute_rows(int width, int height, int has_top, int has_cen
 
   // calendar grid inside slot_bot: 7 columns spanning the width, header + 3 weeks.
   L.cal_cols   = CAL_COLS;
-  L.cal_gap    = CAL_GAP;
-  L.cal_left   = CAL_LEFT;
   L.cal_cell_w = (width - 2 * CAL_LEFT) / CAL_COLS;
   L.cal_cell_h = cal_h / 4;
 

@@ -33,7 +33,6 @@ static TextLayer *date_layer;
 static TextLayer *time_layer;
 static TextLayer *week_layer;
 static TextLayer *ampm_layer;
-static TextLayer *day_layer;
 static TextLayer *ctr_r_layer; // center row (above time), right slot; date_layer is the left
 static Layer *statusbar;
 static Layer *slot_status;
@@ -98,10 +97,10 @@ static uint8_t battery_percent = 10;
 static bool battery_charging = false;
 static bool battery_plugged = false;
 static int phone_battery_percent = -1; // -1 = unknown (phone hasn't reported / API unavailable)
-AppTimer *battery_sending = NULL;
-AppTimer *timezone_request = NULL;
-AppTimer *weather_request = NULL;
-AppTimer *bottom_toggle = NULL;
+static AppTimer *battery_sending = NULL;
+static AppTimer *timezone_request = NULL;
+static AppTimer *weather_request = NULL;
+static AppTimer *bottom_toggle = NULL;
 // connected info
 static bool bluetooth_connected = false;
 // suppress vibration
@@ -137,34 +136,28 @@ static bool showing_statusbar = true;
 #define AK_INTL_DOWO     4
 #define AK_INTL_FMT_DATE 5 // INCOMPLETE
 #define AK_STYLE_AM_PM   6
-#define AK_STYLE_DAY     7
+// 7 (AK_STYLE_DAY) retired — the middle "day" slot was removed; wire number reserved.
 #define AK_STYLE_WEEK    8
 #define AK_INTL_FMT_WEEK 9
 #define AK_DEBUGGING_ON          10
 #define AK_VIBE_PAT_DISCONNECT   11
 #define AK_VIBE_PAT_CONNECT      12
-#define AK_STRFTIME_FORMAT       13 // not implemented in config page, yet...
-#define AK_TRACK_BATTERY         14 // UNUSED
+#define AK_STRFTIME_FORMAT       13 // custom strftime format string, used when date_format == 255
+#define AK_TRACK_BATTERY         14 // enable battery-history tracking (gates battery_status_send)
 #define AK_LANGUAGE              15
 #define AK_DEBUGLANG_ON          16
 #define AK_CAL_WEEK_PATTERN      17
-#define AK_INV_SLOT_STAT         18 // UNUSED 
-#define AK_INV_SLOT_TOP          19 // UNUSED
-#define AK_INV_SLOT_BOT          20 // UNUSED
+// 18/19/20 (AK_INV_SLOT_STAT/TOP/BOT) retired — write-only handlers removed; wire numbers reserved.
 #define AK_SHOW_STAT_BAR         21
 #define AK_SHOW_STAT_BATT        22
-#define AK_SHOW_DATE             23 // UNUSED
+// 23 (AK_SHOW_DATE) retired — write-only handler removed; wire number reserved.
 #define AK_DND_START             24
 #define AK_DND_STOP              25
-#define AK_DND_NOACCEL           26 // UNUSED
+#define AK_DND_NOACCEL           26 // DND mode: 0 off, 1 follow watch Quiet Time, 2 app window
 #define AK_VIBE_START            27
 #define AK_VIBE_STOP             28
-#define AK_VIBE_DAYS             29 // UNUSED
-#define AK_IDLE_REMINDER         30 // UNUSED
-#define AK_IDLE_VIBE_PATT        31 // UNUSED
-#define AK_IDLE_MESSAGE          32 // UNUSED
-#define AK_IDLE_START            33 // UNUSED
-#define AK_IDLE_STOP             34 // UNUSED
+#define AK_VIBE_DAYS             29 // days-of-week mask for hourly vibration
+// 30..34 (AK_IDLE_REMINDER/VIBE_PATT/MESSAGE/START/STOP) retired — handlers removed; wire numbers reserved.
 #define AK_WEATHER_FMT           35
 #define AK_WEATHER_UPDATE        36
 #define AK_THEME                 37
@@ -245,13 +238,6 @@ static int LAYOUT_SLOT_BOT = 96;
 static int LAYOUT_SLOT_HEIGHT = 72;     // top slot (time/date) height
 static int LAYOUT_SLOT_BOT_HEIGHT = 72; // bottom slot (calendar) height — differs from the top once capped
 static int STAT_BATT_LEFT = 96; // right-aligned at runtime
-#define STAT_BATT_TOP         4
-#define STAT_BATT_WIDTH      44 // should be divisible by 10, after subtracting 4 (2 pixels/side for the 'border')
-#define STAT_BATT_HEIGHT     15
-#define STAT_BATT_NIB_WIDTH   3 // >= 3
-#define STAT_BATT_NIB_HEIGHT  5 // >= 3
-#define STAT_BT_ICON_LEFT    -2 // 0
-#define STAT_BT_ICON_TOP      2
 static int STAT_CHRG_ICON_LEFT = 76; // right-aligned at runtime
 #define STAT_CHRG_ICON_TOP    2
 
@@ -267,8 +253,6 @@ static int REL_CLOCK_TIME_LEFT = 0;
 static int REL_CLOCK_TIME_TOP = 7;
 static int REL_CLOCK_TIME_HEIGHT = 60;
 static int REL_CLOCK_SUBTEXT_TOP = 56;
-static int CAL_WIDTH  = 20; // calendar column width (recomputed at runtime)
-static int CAL_HEIGHT = 18; // calendar row height   (recomputed at runtime)
 
 // Recompute the runtime layout for the actual screen. Bands are adaptive: a row
 // only reserves height when it is in use, so disabling rows grows the rest.
@@ -293,15 +277,8 @@ static void compute_layout(int w, int h) {
   REL_CLOCK_TIME_TOP = L.clock_time.y;
   REL_CLOCK_TIME_HEIGHT = L.clock_time.h;
   REL_CLOCK_SUBTEXT_TOP = L.subtext_top;
-  CAL_WIDTH = L.cal_cell_w;
-  CAL_HEIGHT = L.cal_cell_h;
   layout_store(L);
 }
-
-#define SLOT_ID_CLOCK_1  0
-#define SLOT_ID_CALENDAR 1
-#define SLOT_ID_WEATHER  2
-#define SLOT_ID_CLOCK_2  3
 
 /*
 */
@@ -487,24 +464,11 @@ void update_location_text(TextLayer *which_layer) {
 }
 
 #ifndef PBL_PLATFORM_APLITE
-// Minimal "[-]int[.frac]" parser (Pebble libc lacks atof).
-static bool tl_parse_coord(const char *s, float *out) {
-  if (!s || !s[0]) return false;
-  int sign = 1; const char *p = s;
-  if (*p == '-') { sign = -1; p++; } else if (*p == '+') { p++; }
-  long ip = 0; float frac = 0.0f, scale = 0.1f; bool any = false;
-  while (*p >= '0' && *p <= '9') { ip = ip * 10 + (*p - '0'); p++; any = true; }
-  if (*p == '.') { p++; while (*p >= '0' && *p <= '9') { frac += (*p - '0') * scale; scale *= 0.1f; p++; any = true; } }
-  if (!any) return false;
-  *out = sign * (ip + frac);
-  return true;
-}
-
 static void sun_time_text(TextLayer *layer, char *buf, bool want_sunset) {
   float lat, lon, sr, ss;
   if (currentTime && timezone_offset != TIMEZONE_UNINITIALIZED &&
-      tl_parse_coord(adv_settings_get()->weather_lat, &lat) &&
-      tl_parse_coord(adv_settings_get()->weather_lon, &lon)) {
+      parse_coord(adv_settings_get()->weather_lat, &lat) &&
+      parse_coord(adv_settings_get()->weather_lon, &lon)) {
     sun_times(lat, lon, currentTime->tm_yday, -timezone_offset / 4.0f, &sr, &ss);
     float h = want_sunset ? ss : sr;
     // Normalize the fractional hour into [0,24) BEFORE splitting: (int) truncates
@@ -859,10 +823,6 @@ void position_date_layer() {
   apply_center(); // center row owns the date band now
 }
 
-void position_day_layer() {
-  apply_bottom(); // bottom row owns the above-calendar band now
-}
-
 // Clock font scales to the time band height; Roboto (wide) only on wide screens
 // where it won't collide with the weather to its left. Returns a non-const
 // FONT_KEY string literal so it can pass to set_layer_attr_sfont(char*).
@@ -975,34 +935,6 @@ void toggle_statusbar() {
   position_date_layer();
 }
 
-void slot_status_layer_update_callback(Layer *me, GContext* ctx) {
-}
-
-void statusbar_layer_update_callback(Layer *me, GContext* ctx) {
-// XXX positioning tests... only valid if we leave statusbar's frame/bounds set to the whole watch...
-/*
-    setColors(ctx);
-    graphics_draw_rect(ctx, GRect(0,  0, 144, 24)); // statusbar
-    graphics_draw_rect(ctx, GRect(0, 24, 144, 72)); // top half
-    graphics_draw_rect(ctx, GRect(0, 96, 144, 72)); // bottom half
-*
-    graphics_draw_rect(ctx, GRect(0, 50, 20, 20)); // linked
-    graphics_draw_rect(ctx, GRect(0, 72, 20, 20)); // icon 2
-    graphics_draw_rect(ctx, GRect(0, 50, 10, 42)); // battery l
-    graphics_draw_rect(ctx, GRect(144-10, 50, 10, 42)); // battery r
-    graphics_draw_rect(ctx, GRect(144-20, 50, 20, 20)); // icon 3
-    graphics_draw_rect(ctx, GRect(144-20, 72, 20, 20)); // icon 4
-    graphics_draw_rect(ctx, GRect(0, 46, 144, 50)); // targeting time
-*/
-}
-
-void slot_top_layer_update_callback(Layer *me, GContext* ctx) {
-// TODO: configurable: draw appropriate slot
-}
-
-void slot_bot_layer_update_callback(Layer *me, GContext* ctx) {
-// TODO: configurable: draw appropriate slot
-}
 
 // Draw a battery outline + nib for the "bar with %" style; the percentage text
 // is the slot's own TextLayer, centred inside this box.
@@ -1306,7 +1238,6 @@ static void apply_palette(void) {
   text_layer_set_text_color(time_layer, fg);
   text_layer_set_text_color(date_layer, fg);
   if (ctr_r_layer) { text_layer_set_text_color(ctr_r_layer, fg); }
-  text_layer_set_text_color(day_layer, fg);
   text_layer_set_text_color(week_layer, fg);
   text_layer_set_text_color(ampm_layer, fg);
   text_layer_set_text_color(text_connection_layer, fg);
@@ -1330,7 +1261,6 @@ static void apply_palette(void) {
 static void set_unifont() {
   if ( strcmp(lang_gen_get()->language,"RU") == 0 ) { // Unicode font w/ Cyrillic characters
     // set fonts...
-    text_layer_set_font(day_layer,unifont_16);
     text_layer_set_font(text_connection_layer, unifont_16);
     text_layer_set_font(date_layer, unifont_16);
     // set fonts, for calendar
@@ -1338,7 +1268,6 @@ static void set_unifont() {
     cal_bold   = unifont_16_bold; // fh = 22 // XXX TODO need a bold unicode/unifont option... maybe invert it or box it or something?
   } else { // Standard font
     // set fonts...
-    text_layer_set_font(day_layer,fonts_get_system_font(FONT_KEY_GOTHIC_14));
     text_layer_set_font(text_connection_layer,fonts_get_system_font(FONT_KEY_GOTHIC_18));
     text_layer_set_font(date_layer,fonts_get_system_font(FONT_KEY_GOTHIC_24));
     // set fonts, for calendar
@@ -1349,7 +1278,7 @@ static void set_unifont() {
   position_connection_layer();
   position_date_layer();
   position_time_layer();
-  position_day_layer();
+  apply_bottom(); // above-calendar band (formerly via position_day_layer)
 }
 
 bool period_check(uint8_t start_incr, uint8_t stop_incr, bool retval_on_equal) {
@@ -1402,11 +1331,6 @@ void set_layer_attr_sfont(TextLayer *textlayer, char *font_key, GTextAlignment A
   text_layer_set_font(textlayer, fonts_get_system_font(font_key));
 }
 
-void set_layer_attr_cfont(TextLayer *textlayer, uint32_t FontResHandle, GTextAlignment Alignment) {
-  set_layer_attr(textlayer, Alignment);
-  text_layer_set_font(textlayer, fonts_load_custom_font(resource_get_handle(FontResHandle)));
-}
-
 static void window_load(Window *window) {
 
   // Check each load: adopt the new handle only on success, otherwise keep the
@@ -1431,21 +1355,18 @@ static void window_load(Window *window) {
 
   slot_status = layer_create(GRect(0,LAYOUT_STAT,DEVICE_WIDTH,LAYOUT_SLOT_TOP));
   //slot_status = layer_create(GRect(0,0,DEVICE_WIDTH,DEVICE_HEIGHT));
-  layer_set_update_proc(slot_status, slot_status_layer_update_callback);
+  // No update proc: this is a pure container; its children draw themselves.
   layer_add_child(window_layer, slot_status);
 
   statusbar = layer_create(GRect(0,LAYOUT_STAT,DEVICE_WIDTH,LAYOUT_SLOT_TOP));
-  layer_set_update_proc(statusbar, statusbar_layer_update_callback);
   layer_add_child(slot_status, statusbar);
   GRect stat_bounds = layer_get_bounds(statusbar);
 
   slot_top = layer_create(GRect(0,LAYOUT_SLOT_TOP,DEVICE_WIDTH,LAYOUT_SLOT_HEIGHT));
-  layer_set_update_proc(slot_top, slot_top_layer_update_callback);
   layer_add_child(window_layer, slot_top);
   GRect slot_top_bounds = layer_get_bounds(slot_top);
 
   slot_bot = layer_create(GRect(0,LAYOUT_SLOT_BOT,DEVICE_WIDTH,LAYOUT_SLOT_BOT_HEIGHT));
-  layer_set_update_proc(slot_bot, slot_bot_layer_update_callback);
   layer_add_child(window_layer, slot_bot);
   GRect slot_bot_bounds = layer_get_bounds(slot_bot);
 
@@ -1534,11 +1455,6 @@ static void window_load(Window *window) {
   }
 
   // Middle slot retired: only two complications above the calendar (left/right).
-  day_layer = text_layer_create( GRect(4, REL_CLOCK_SUBTEXT_TOP, REL_CLOCK_DATE_WIDTH, 22) );
-  set_layer_attr_sfont(day_layer, FONT_KEY_GOTHIC_18, GTextAlignmentCenter);
-  layer_add_child(datetime_layer, text_layer_get_layer(day_layer));
-  layer_set_hidden(text_layer_get_layer(day_layer), true);
-
   ampm_layer = text_layer_create( GRect(DEVICE_WIDTH / 2 + 2, REL_CLOCK_SUBTEXT_TOP, DEVICE_WIDTH / 2 - 4, 22) ); // right half
   set_layer_attr_sfont(ampm_layer, FONT_KEY_GOTHIC_18, GTextAlignmentRight);
   layer_add_child(datetime_layer, text_layer_get_layer(ampm_layer));
@@ -1598,7 +1514,6 @@ static void window_unload(Window *window) {
   layer_destroy(text_layer_get_layer(text_battery_layer));
   layer_destroy(text_layer_get_layer(text_connection_layer));
   layer_destroy(text_layer_get_layer(ampm_layer));
-  layer_destroy(text_layer_get_layer(day_layer));
   layer_destroy(text_layer_get_layer(week_layer));
   layer_destroy(text_layer_get_layer(time_layer));
   layer_destroy(text_layer_get_layer(date_layer));
@@ -1657,13 +1572,9 @@ static void deinit(void) {
 void handle_vibe_suppression() {
   // control vibe_suppression events - we should never set vibe_suppression to false outside of this function
   // it is useful to set it true directly (briefly), to ensure suppression, and then call this function afterwards
-  if (dnd_period_active || battery_plugged) {
-    vibe_suppression = true;
-  } else if (settings_get()->vibe_hour && vibe_period_active) {
-    vibe_suppression = false;
-  } else {
-    vibe_suppression = false;
-  }
+  // Suppress only inside a DND period or while charging; the hourly-vibe window
+  // never suppresses (both non-DND branches previously set false).
+  vibe_suppression = (dnd_period_active || battery_plugged);
 }
 
 void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed)
@@ -1744,7 +1655,6 @@ void handle_second_tick(struct tm *tick_time, TimeUnits units_changed)
       refresh_second_slot(week_layer, bl ? bl : br);
     }
   }
-  refresh_second_slot(day_layer, s->show_day);   // legacy standalone full-width slot
 
   // Center row (above time): layout_two_slots(date_layer, ctr_r_layer, ...) draws
   // the left slot into date_layer and the right into ctr_r_layer; when only one
@@ -1780,14 +1690,13 @@ void handle_second_tick(struct tm *tick_time, TimeUnits units_changed)
 }
 
 static int need_second_tick_handler(void) {
-  // A per-second tick is needed if ANY of the six live slots (plus the legacy
-  // middle slot) holds a needs-second-tick complication. The id list lives only
-  // in complication_flags().
+  // A per-second tick is needed if ANY of the six live slots holds a
+  // needs-second-tick complication. The id list lives only in complication_flags().
   persist *s = settings_get();
   uint8_t slots[] = {
-    s->show_week, s->show_am_pm, s->show_day, // above-calendar + legacy middle
-    s->slot_stat_l, s->slot_stat_r,           // status bar
-    s->slot_ctr_l,  s->slot_ctr_r,            // center row
+    s->show_week, s->show_am_pm,     // above-calendar row
+    s->slot_stat_l, s->slot_stat_r,  // status bar
+    s->slot_ctr_l,  s->slot_ctr_r,   // center row
   };
   for (unsigned i = 0; i < sizeof(slots) / sizeof(slots[0]); i++) {
     if (complication_flags(slots[i]) & COMP_NEEDS_SECOND_TICK) { return 1; }
@@ -2004,17 +1913,6 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
       settings_get()->week_format = FMT_WEEK->value->uint8;
     }
 
-    // AK_STYLE_DAY
-    Tuple *style_day = dict_find(received, AK_STYLE_DAY);
-    if (style_day != NULL) {
-      settings_get()->show_day = style_day->value->uint8;
-      if ( settings_get()->show_day ) {
-        layer_set_hidden(text_layer_get_layer(day_layer), false);
-      }  else {
-        layer_set_hidden(text_layer_get_layer(day_layer), true);
-      }
-    }
-
     // AK_STYLE_AM_PM
     Tuple *style_am_pm = dict_find(received, AK_STYLE_AM_PM);
     if (style_am_pm != NULL) {
@@ -2077,18 +1975,6 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
 
     Tuple *appkey;
 
-    // AK_INV_SLOT_STAT == invert slot (or not!) // TODO, UNUSED
-    appkey = dict_find(received, AK_INV_SLOT_STAT);
-    if (appkey != NULL) { adv_settings_get()->invertStatBar = appkey->value->uint8; }
-
-    // AK_INV_SLOT_TOP == invert slot (or not!) // TODO, UNUSED
-    appkey = dict_find(received, AK_INV_SLOT_TOP);
-    if (appkey != NULL) { adv_settings_get()->invertTopSlot = appkey->value->uint8; }
-
-    // AK_INV_SLOT_BOT == invert slot (or not!) // TODO, UNUSED
-    appkey = dict_find(received, AK_INV_SLOT_BOT);
-    if (appkey != NULL) { adv_settings_get()->invertBotSlot = appkey->value->uint8; }
-
     // AK_SHOW_STAT_BAR == show statusbar
     appkey = dict_find(received, AK_SHOW_STAT_BAR);
     if (appkey != NULL) { adv_settings_get()->showStatus = appkey->value->uint8; }
@@ -2100,10 +1986,6 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
     // AK_CLOCK2_TZ == second time zone UTC offset (whole hours, signed)
     appkey = dict_find(received, AK_CLOCK2_TZ);
     if (appkey != NULL) { adv_settings_get()->clock2_tz = appkey->value->int8; }
-
-    // AK_SHOW_DATE == show date // TODO, UNUSED
-    appkey = dict_find(received, AK_SHOW_DATE);
-    if (appkey != NULL) { adv_settings_get()->showDate = appkey->value->uint8; }
 
     // AK_DND_START == period start, DND
     appkey = dict_find(received, AK_DND_START);
@@ -2125,31 +2007,9 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
     appkey = dict_find(received, AK_VIBE_STOP);
     if (appkey != NULL) { adv_settings_get()->vibe_hour_stop = appkey->value->uint8; }
 
-    // AK_VIBE_DAYS == days to do hourly vibration // TODO, UNUSED
+    // AK_VIBE_DAYS == days-of-week mask for hourly vibration (read by hourvibe_period_check)
     appkey = dict_find(received, AK_VIBE_DAYS);
     if (appkey != NULL) { adv_settings_get()->vibe_hour_days = appkey->value->uint8; }
-
-    // AK_IDLE_REMINDER == period stop, VIBE // TODO, UNUSED
-    appkey = dict_find(received, AK_IDLE_REMINDER);
-    if (appkey != NULL) { adv_settings_get()->idle_reminder = appkey->value->uint8; }
-
-    // AK_IDLE_VIBE_PATT == idle vibration pattern // TODO, UNUSED
-    appkey = dict_find(received, AK_IDLE_VIBE_PATT);
-    if (appkey != NULL) { adv_settings_get()->idle_pattern = appkey->value->uint8; }
-
-/* TODO
-    // AK_IDLE_MESSAGE == Idle message // TODO, UNUSED
-    appkey = dict_find(received, AK_IDLE_MESSAGE);
-    if (appkey != NULL) { strncpy(adv_settings_get()->idle_message, appkey->value->cstring, sizeof(adv_settings_get()->idle_message)-1); }
-*/
-
-    // AK_IDLE_START == period start, Idle reminder // TODO, UNUSED
-    appkey = dict_find(received, AK_IDLE_START);
-    if (appkey != NULL) { adv_settings_get()->idle_start = appkey->value->uint8; }
-
-    // AK_IDLE_STOP == period stop, Idle reminder // TODO, UNUSED
-    appkey = dict_find(received, AK_IDLE_STOP);
-    if (appkey != NULL) { adv_settings_get()->idle_stop = appkey->value->uint8; }
 
     // AK_WEATHER_FMT == weather format (0:C / 1:F)
     appkey = dict_find(received, AK_WEATHER_FMT);

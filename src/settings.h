@@ -13,7 +13,7 @@ typedef struct persist { // 18 bytes
   uint8_t dayOfWeekOffset;        // first day of our week
   uint8_t date_format;            // date format
   uint8_t show_am_pm;             // Above-calendar slot, right (complication content)
-  uint8_t show_day;               // (retired middle slot)
+  uint8_t show_day;               // reserved byte (retired middle slot; machinery removed)
   uint8_t show_week;              // Above-calendar slot, left (complication content)
   uint8_t slot_stat_l;            // Status bar slot, left (complication content)
   uint8_t slot_stat_r;            // Status bar slot, right (complication content)
@@ -35,24 +35,24 @@ typedef struct persist { // 18 bytes
 // fields here: every NEW advanced setting goes into persist_settings_ext
 // (PK_SETTINGS_EXT) below. The _Static_assert after the typedef enforces this.
 typedef struct persist_adv_settings { // 244 bytes
-  uint8_t week_pattern;    //  1 byte
-  uint8_t invertStatBar;   //  1 byte
-  uint8_t invertTopSlot;   //  1 byte
-  uint8_t invertBotSlot;   //  1 byte
-  uint8_t showStatus;      //  1 byte
-  uint8_t showStatusBat;   //  1 byte
-  uint8_t showDate;        //  1 byte
-  uint8_t DND_start;       //  1 byte
-  uint8_t DND_stop;        //  1 byte
-  uint8_t dnd_mode;        //  1 byte: 0 off, 1 follow watch Quiet Time, 2 app window
-  uint8_t vibe_hour_start; //  1 byte
-  uint8_t vibe_hour_stop;  //  1 byte
-  uint8_t vibe_hour_days;  //  1 byte
-  uint8_t idle_reminder;   //  1 byte
-  uint8_t idle_pattern;    //  1 byte
+  uint8_t week_pattern;            //  1 byte
+  uint8_t reserved_invertStatBar;  //  1 byte (reserved; handler removed, was write-only)
+  uint8_t reserved_invertTopSlot;  //  1 byte (reserved; handler removed, was write-only)
+  uint8_t reserved_invertBotSlot;  //  1 byte (reserved; handler removed, was write-only)
+  uint8_t showStatus;              //  1 byte
+  uint8_t showStatusBat;           //  1 byte
+  uint8_t reserved_showDate;       //  1 byte (reserved; handler removed, was write-only)
+  uint8_t DND_start;               //  1 byte
+  uint8_t DND_stop;                //  1 byte
+  uint8_t dnd_mode;                //  1 byte: 0 off, 1 follow watch Quiet Time, 2 app window
+  uint8_t vibe_hour_start;         //  1 byte
+  uint8_t vibe_hour_stop;          //  1 byte
+  uint8_t vibe_hour_days;          //  1 byte
+  uint8_t reserved_idle_reminder;  //  1 byte (reserved; handler removed, was write-only)
+  uint8_t reserved_idle_pattern;   //  1 byte (reserved; handler removed, was write-only)
   char custom_date_fmt[32]; // 32 bytes: custom strftime date format (date_format == 255)
-  uint8_t idle_start;      //  1 byte
-  uint8_t idle_stop;       //  1 byte
+  uint8_t reserved_idle_start;     //  1 byte (reserved; handler removed, was write-only)
+  uint8_t reserved_idle_stop;      //  1 byte (reserved; handler removed, was write-only)
   int8_t clock2_tz;        //  1 byte
   char clock2_desc[32];    // 32 bytes
   uint8_t weather_format;  //  1 byte

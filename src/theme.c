@@ -20,21 +20,6 @@ static const Palette PALETTES[THEME_COUNT][2] = {
     { GColorOxfordBlue, GColorWhite, GColorChromeYellow, GColorBlack, GColorBrilliantRose, GColorRed, GColorDukeBlue } },
 };
 
-#ifndef PBL_PLATFORM_APLITE
-// Minimal "[-]int[.frac]" coordinate parser (Pebble libc lacks atof).
-static bool parse_coord(const char *s, float *out) {
-  if (!s || !s[0]) return false;
-  int sign = 1; const char *p = s;
-  if (*p == '-') { sign = -1; p++; } else if (*p == '+') { p++; }
-  long ip = 0; float frac = 0.0f, scale = 0.1f; bool any = false;
-  while (*p >= '0' && *p <= '9') { ip = ip * 10 + (*p - '0'); p++; any = true; }
-  if (*p == '.') { p++; while (*p >= '0' && *p <= '9') { frac += (*p - '0') * scale; scale *= 0.1f; p++; any = true; } }
-  if (!any) return false;
-  *out = sign * (ip + frac);
-  return true;
-}
-#endif
-
 static bool is_night(void) {
   if (!currentTime) return true;
 #ifndef PBL_PLATFORM_APLITE
