@@ -118,7 +118,7 @@ jobs:
       - name: Upload .pbw
         uses: actions/upload-artifact@v4
         with:
-          name: TimelyNG-${{ steps.meta.outputs.version }}-${{ github.sha }}
+          name: Timely3-${{ steps.meta.outputs.version }}-${{ github.sha }}
           path: build/*.pbw
           if-no-files-found: error
 
@@ -130,7 +130,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: TimelyNG-*
+          pattern: Timely3-*
           merge-multiple: true
 
       - name: Publish release with the .pbw attached

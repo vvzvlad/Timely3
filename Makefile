@@ -1,4 +1,4 @@
-# Dev tasks for TimelyNG. Equivalent recipes exist in the justfile.
+# Dev tasks for Timely3. Equivalent recipes exist in the justfile.
 #   Host unit tests:        run inside `nix develop .#test`   (needs a host cc)
 #   Pebble app + emulator:  run inside `nix develop`          (needs pebble CLI)
 

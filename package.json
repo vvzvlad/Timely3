@@ -1,6 +1,6 @@
 {
-  "name": "TimelyNG",
-  "author": "Emanuele 'Lele' Calo",
+  "name": "Timely3",
+  "author": "vvzvlad",
   "version": "0.0.7",
   "description": "A calendar watchface for Pebble: date, time and weather up top, a 3-week calendar below, and fully configurable complication rows. Appstore copy in PUBLISHING.md; release notes in CHANGELOG.md.",
   "private": true,
@@ -22,7 +22,7 @@
     ],
     "projectType": "native",
     "displayName": "TimelyNG",
-    "uuid": "de253577-14c6-4ab2-9db6-65bda1c7c1d2",
+    "uuid": "11077a52-8cef-4fa5-af05-0aec3c49aba1",
     "watchapp": {
       "watchface": true,
       "hiddenApp": false,
@@ -68,13 +68,13 @@
         },
         {
           "type": "font",
-          "characterRegex": "[ -~Ѐ-ѠÀ-ÖØ-öø-ÿ…]",
+          "characterRegex": "[ -~\u0400-\u0460\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u00ff\u2026]",
           "name": "FONT_UNICODE_BOLD_16",
           "file": "fonts/DejaVuSansCondensed-Bold.ttf"
         },
         {
           "type": "font",
-          "characterRegex": "[ -~Ѐ-ѠÀ-ÖØ-öø-ÿ…]",
+          "characterRegex": "[ -~\u0400-\u0460\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u00ff\u2026]",
           "name": "FONT_UNICODE_16",
           "file": "fonts/DejaVuSansCondensed.ttf"
         },

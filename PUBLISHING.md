@@ -1,4 +1,4 @@
-# Publishing TimelyNG to the Pebble / Rebble appstore
+# Publishing Timely3 to the Pebble / Rebble appstore
 
 Listing copy and asset specs, ready to paste into the
 [Rebble developer portal](https://dev-portal.rebble.io/). Field set per the
@@ -9,19 +9,19 @@ Rebble guides:
 
 ## Basic details
 
-- **Title:** TimelyNG
+- **Title:** Timely3
 - **Type:** Watchface (no large/small icon step required for watchfaces)
 - **Category:** Watchfaces
-- **UUID:** `de253577-14c6-4ab2-9db6-65bda1c7c1d2`
-- **Source code:** https://github.com/eldios/TimelyNG
-- **Website:** https://github.com/eldios/TimelyNG
-- **Support:** https://github.com/eldios/TimelyNG/issues  (or a support email)
+- **UUID:** `11077a52-8cef-4fa5-af05-0aec3c49aba1`
+- **Source code:** https://github.com/vvzvlad/Timely3
+- **Website:** https://github.com/vvzvlad/Timely3
+- **Support:** https://github.com/vvzvlad/Timely3/issues  (or a support email)
 
 ## Description
 
 > A calendar watchface with complications you arrange yourself.
 >
-> TimelyNG shows the date, time and weather up top and a compact three‑week
+> Timely3 shows the date, time and weather up top and a compact three‑week
 > calendar (previous · current · next) below. Around them are three configurable
 > rows — a status bar, a row above the time, and a row above the calendar — and
 > each can hold one complication (centred) or two side by side.
@@ -97,7 +97,7 @@ Create an asset collection per supported platform (`emery`, `basalt`,
 
 ## Publish flow
 
-1. `pebble build` → upload `build/TimelyNG.pbw` with the release notes above.
+1. `pebble build` → upload `build/Timely3.pbw` with the release notes above.
 2. Add an asset collection (description + screenshots) for each platform.
 3. Click **Publish** (or **Publish Privately**), then reload for the public
    appstore link.

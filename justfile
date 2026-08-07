@@ -1,4 +1,4 @@
-# Dev tasks for TimelyNG. Equivalent recipes exist in the Makefile.
+# Dev tasks for Timely3. Equivalent recipes exist in the Makefile.
 #   Host unit tests:        run inside `nix develop .#test`
 #   Pebble app + emulator:  run inside `nix develop`
 

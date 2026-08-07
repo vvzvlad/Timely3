@@ -1,6 +1,8 @@
 # Agent Instructions — Timely3
 
-Форк TimelyNG (цепочка: `cynorg/PebbleTimely` → `eldios/TimelyNG` → `vvzvlad/Timely3`).
+Timely3 — форк (цепочка: `cynorg/PebbleTimely` → `eldios/TimelyNG` → `vvzvlad/Timely3`).
+Собственный UUID, поэтому на часах ставится отдельным приложением, а не поверх
+исходного вотчфейса.
 Вотчфейс для Pebble: C99 под Cortex-M3 + PebbleKit JS для страницы настроек.
 
 ## Структура

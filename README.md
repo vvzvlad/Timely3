@@ -1,11 +1,11 @@
 <div align="center">
 
-# ⌚ TimelyNG
+# ⌚ Timely3
 
 **A calendar watchface for Pebble — date, time & weather up top, a 3‑week
 calendar below, and fully configurable complication rows you arrange yourself.**
 
-[![CI](https://github.com/eldios/TimelyNG/actions/workflows/ci.yml/badge.svg)](https://github.com/eldios/TimelyNG/actions/workflows/ci.yml)
+[![CI](https://github.com/vvzvlad/Timely3/actions/workflows/ci.yml/badge.svg)](https://github.com/vvzvlad/Timely3/actions/workflows/ci.yml)
 ![Version](https://img.shields.io/badge/version-0.0.7-blue)
 ![Platforms](https://img.shields.io/badge/Pebble-emery%20·%20flint%20·%20basalt%20·%20diorite-orange)
 ![Language](https://img.shields.io/badge/C-C99-555?logo=c)
@@ -18,7 +18,8 @@ calendar below, and fully configurable complication rows you arrange yourself.**
 
 ## 🙏 Homage & inspiration
 
-TimelyNG is **freely inspired by, and an homage to, the original *Timely* /
+Timely3 is a fork of [eldios/TimelyNG](https://github.com/eldios/TimelyNG), which
+is itself **freely inspired by, and an homage to, the original *Timely* /
 *PebbleTimely* watchface and its community forks** — in particular
 [Andrew129260/Timely‑2](https://github.com/Andrew129260/Timely-2) and
 [alan‑johnson/PebbleTimely](https://github.com/alan-johnson/PebbleTimely).
@@ -27,9 +28,9 @@ localizable date/time, the complication slots), rebuilt for the modern
 **Core Devices Pebble SDK** and the new hardware. All credit for the original
 concept goes to those projects; any bugs here are mine.
 
-## ✨ Why TimelyNG (what's different)
+## ✨ Why Timely3 (what's different)
 
-Compared to the classic Timely and its forks, TimelyNG adds:
+Compared to the classic Timely and its forks, Timely3 adds:
 
 - **Configurable complication *rows*, not fixed slots.** Three rows — status
   bar, above the time, above the calendar — and each holds **one complication
@@ -81,7 +82,7 @@ current design is rectangle‑centric. `aplite` was dropped for RAM. See
 
 ```sh
 nix develop                      # pebble CLI + ARM toolchain + emulator
-pebble build                     # -> build/TimelyNG.pbw
+pebble build                     # -> build/Timely3.pbw
 pebble install --emulator emery  # colour emulator (or basalt / diorite / flint)
 ```
 

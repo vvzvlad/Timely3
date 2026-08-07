@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to TimelyNG. Format loosely follows
+All notable changes to Timely3. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/). The entry below is also the
 text to paste into the **Release notes** field when uploading the `.pbw` to the
 [Rebble developer portal](https://dev-portal.rebble.io/) (it is not embedded in
