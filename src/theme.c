@@ -63,7 +63,8 @@ Palette theme_palette(void) {
 
 void setColors(GContext* ctx) {
   Palette p = theme_palette();
-  window_set_background_color(window, p.bg);
+  // Window background is set once per relayout/tick in apply_palette(), not here;
+  // these setters only touch ctx colors so a draw callback can stay a no-op.
   graphics_context_set_stroke_color(ctx, p.fg);
   graphics_context_set_fill_color(ctx, p.bg);
   graphics_context_set_text_color(ctx, p.fg);
@@ -71,7 +72,7 @@ void setColors(GContext* ctx) {
 
 void setInvColors(GContext* ctx) {
   Palette p = theme_palette();
-  window_set_background_color(window, p.fg);
+  // Ctx colors only; window bg is owned by apply_palette() (see setColors).
   graphics_context_set_stroke_color(ctx, p.bg);
   graphics_context_set_fill_color(ctx, p.fg);
   graphics_context_set_text_color(ctx, p.bg);
@@ -79,7 +80,7 @@ void setInvColors(GContext* ctx) {
 
 void setTodayColors(GContext* ctx) {
   Palette p = theme_palette();
-  window_set_background_color(window, p.bg);
+  // Ctx colors only; window bg is owned by apply_palette() (see setColors).
   graphics_context_set_stroke_color(ctx, p.accent_fg);
   graphics_context_set_fill_color(ctx, p.accent);
   graphics_context_set_text_color(ctx, p.accent_fg);

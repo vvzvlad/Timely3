@@ -1,4 +1,5 @@
 #pragma once
+#include <stdbool.h>
 // Pebble-free layout geometry so it can be unit-tested on the host.
 typedef struct { int x, y, w, h; } LayoutRect;
 
@@ -24,6 +25,13 @@ typedef struct {
 // BOTTOM above-calendar); disabled rows free their height to the rest.
 TimelyLayout layout_compute_rows(int width, int height, int has_top, int has_center, int has_bottom);
 TimelyLayout layout_compute(int width, int height); // all rows present (default)
+
+// Wide-screen predicate: the single source of truth for the >= 180px threshold
+// that routes emery/chalk to the wide layout (Roboto clock, bigger weather
+// glyph, status tray under the clock instead of the statusbar charge icon).
+// Behavior-preserving: chalk (round, 180) still classifies as wide here; moving
+// chalk's status icons off the round bezel is a known follow-up, out of scope.
+bool layout_is_wide(int width);
 
 // Clock font choice as a pure, testable decision (the view maps it to a Pebble
 // FONT_KEY). Scales with the time-band height; the big proportional Roboto is

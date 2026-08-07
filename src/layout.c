@@ -58,8 +58,11 @@ TimelyLayout layout_compute(int width, int height) {
   return layout_compute_rows(width, height, 1, 1, 1);
 }
 
+// Single source of truth for the wide-screen threshold (see layout.h).
+bool layout_is_wide(int width) { return width >= 180; }
+
 ClockFont clock_font_for(int width, int band_h) {
-  if (width >= 180 && band_h >= 60) { return CLOCK_FONT_ROBOTO_49; }
+  if (layout_is_wide(width) && band_h >= 60) { return CLOCK_FONT_ROBOTO_49; }
   if (band_h >= 52) { return CLOCK_FONT_LECO_42; }
   if (band_h >= 44) { return CLOCK_FONT_LECO_38; }
   if (band_h >= 36) { return CLOCK_FONT_LECO_32; }
@@ -67,7 +70,7 @@ ClockFont clock_font_for(int width, int band_h) {
 }
 
 int weather_glyph_size_for(int width, int band_h) {
-  if (width < 180) { return 28; }
+  if (!layout_is_wide(width)) { return 28; }
   if (band_h >= 64) { return 48; }
   return 40;
 }

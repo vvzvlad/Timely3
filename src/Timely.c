@@ -41,6 +41,12 @@ static Layer *slot_top;
 static Layer *slot_bot;
 static GFont unifont_16;
 static GFont unifont_16_bold;
+// Whether unifont_16/_bold currently hold a CUSTOM font (vs. the stage-12
+// system-font fallback used when the custom load failed). Only custom handles
+// may be passed to fonts_unload_custom_font at window_unload; unloading a
+// system handle is a bug. Set true only inside the custom-load success branch.
+static bool unifont_16_is_custom = false;
+static bool unifont_16_bold_is_custom = false;
 GFont cal_normal;
 GFont cal_bold;
 GFont climacons;
@@ -906,12 +912,10 @@ void update_datetime_subtext() {
 }
 
 void datetime_layer_update_callback(Layer *me, GContext* ctx) {
-    (void)me;
-    // TODO: these calls can probably be reduced/optimized, but apparently not removed entirely!
-    setColors(ctx);
-    update_date_text();
-    update_time_text();
-    update_datetime_subtext();
+    // No-op: layout/content is now driven from the tick + event handlers
+    // (apply_center/apply_bottom/update_time_text), not the draw callback.
+    // This proc issues no graphics_* calls, so drawing nothing is safe.
+    (void)me; (void)ctx;
 }
 
 void statusbar_visible() {
@@ -944,8 +948,8 @@ void toggle_statusbar() {
     layer_set_hidden(statusbar, false);
     // date / center-left (alignment owned by apply_center)
     layer_add_child(datetime_layer, text_layer_get_layer(date_layer));
-    // icon(s)
-    layer_add_child(statusbar, bitmap_layer_get_layer(bmp_charging_layer));
+    // icon(s) — NULL on wide screens (not created there); guard the re-parent.
+    if (bmp_charging_layer) { layer_add_child(statusbar, bitmap_layer_get_layer(bmp_charging_layer)); }
     layer_add_child(statusbar, battery_layer);
     // Keep the slot value text above battery_layer (which draws the bar-style
     // outline) so re-parenting here doesn't bury the percentage under the box.
@@ -964,8 +968,8 @@ void toggle_statusbar() {
     } else {
       layer_add_child(datetime_layer, text_layer_get_layer(date_layer));
     }
-    // icon(s)
-    layer_add_child(datetime_layer, bitmap_layer_get_layer(bmp_charging_layer));
+    // icon(s) — NULL on wide screens (not created there); guard the re-parent.
+    if (bmp_charging_layer) { layer_add_child(datetime_layer, bitmap_layer_get_layer(bmp_charging_layer)); }
     layer_add_child(datetime_layer, battery_layer);
   }
   position_date_layer();
@@ -1151,7 +1155,7 @@ static void battery_status_send(void *data) {
 }
 
 void set_status_charging_icon() {
-  if (DEVICE_WIDTH >= 180) { refresh_status_tray(); return; } // wide: tray under the clock
+  if (layout_is_wide(DEVICE_WIDTH)) { refresh_status_tray(); return; } // wide: tray under the clock
   // this icon shows either DND, hourly vibration, or charging...
   bool chrg_shown = true;
   if (battery_charging) { // charging
@@ -1197,6 +1201,10 @@ static void handle_battery(BatteryChargeState charge_state) {
   statusbar_visible();
   toggle_statusbar();
   refresh_stat_slots(); // after toggle so the battery fills end up on top
+  // Immediacy parity: a battery% complication in a center/bottom slot must
+  // refresh now (the draw callback no longer does it).
+  apply_center();
+  apply_bottom();
   handle_vibe_suppression();
 }
 
@@ -1254,6 +1262,10 @@ void update_connection() {
   generate_vibe(bluetooth_connected ? settings_get()->vibe_pat_connect
                                      : settings_get()->vibe_pat_disconnect);
   refresh_stat_slots();
+  // Immediacy parity: a BT-status complication in a center/bottom slot must
+  // refresh now (the draw callback no longer does it).
+  apply_center();
+  apply_bottom();
 }
 
 static void handle_bluetooth(bool connected) {
@@ -1286,6 +1298,10 @@ static void tint_icon(GBitmap *bmp, GColor color) {
 #endif
 
 static void apply_palette(void) {
+  // Own the window background here (moved out of theme.c's setColors/setInv/
+  // setToday). Deterministic per relayout/tick, and fixes a latent flicker
+  // where a calendar cell's setInvColors could leave bg == fg.
+  window_set_background_color(window, theme_palette().bg);
   GColor fg = theme_palette().fg;
   text_layer_set_text_color(time_layer, fg);
   text_layer_set_text_color(date_layer, fg);
@@ -1396,9 +1412,9 @@ static void window_load(Window *window) {
   // Check each load: adopt the new handle only on success, otherwise keep the
   // previous one (NULL on first load) and warn, rather than storing a NULL font.
   GFont uni = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_UNICODE_16));
-  if (uni) { unifont_16 = uni; } else { APP_LOG(APP_LOG_LEVEL_WARNING, "unifont_16 load failed"); }
+  if (uni) { unifont_16 = uni; unifont_16_is_custom = true; } else { APP_LOG(APP_LOG_LEVEL_WARNING, "unifont_16 load failed"); }
   GFont uni_bold = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_UNICODE_BOLD_16));
-  if (uni_bold) { unifont_16_bold = uni_bold; } else { APP_LOG(APP_LOG_LEVEL_WARNING, "unifont_16_bold load failed"); }
+  if (uni_bold) { unifont_16_bold = uni_bold; unifont_16_bold_is_custom = true; } else { APP_LOG(APP_LOG_LEVEL_WARNING, "unifont_16_bold load failed"); }
   // Never leave these NULL: a first-load failure (OOM) would otherwise be handed to
   // graphics_draw_text as a NULL GFont via cal_normal/cal_bold and set_unifont().
   // Fall back to a system font so every consumer has a valid handle (cf. effects.c).
@@ -1433,9 +1449,15 @@ static void window_load(Window *window) {
   layer_add_child(window_layer, slot_bot);
   GRect slot_bot_bounds = layer_get_bounds(slot_bot);
 
-  bmp_charging_layer = bitmap_layer_create( GRect(STAT_CHRG_ICON_LEFT, STAT_CHRG_ICON_TOP, 20, 20) );
-  bitmap_layer_set_compositing_mode(bmp_charging_layer, GCompOpSet);
-  layer_add_child(statusbar, bitmap_layer_get_layer(bmp_charging_layer));
+  // Narrow screens only: wide screens (emery/chalk) use the status tray under the
+  // clock and never draw this icon (set_status_charging_icon early-returns), so
+  // creating it there is dead. Leave bmp_charging_layer == NULL on wide screens;
+  // toggle_statusbar/window_unload guard against that NULL.
+  if (!layout_is_wide(DEVICE_WIDTH)) {
+    bmp_charging_layer = bitmap_layer_create( GRect(STAT_CHRG_ICON_LEFT, STAT_CHRG_ICON_TOP, 20, 20) );
+    bitmap_layer_set_compositing_mode(bmp_charging_layer, GCompOpSet);
+    layer_add_child(statusbar, bitmap_layer_get_layer(bmp_charging_layer));
+  }
   image_charging_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_CHARGING_ICON);
   image_hourvibe_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_HOURVIBE_ICON);
   image_dnd_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_DONOTDISTURB_ICON);
@@ -1467,7 +1489,7 @@ static void window_load(Window *window) {
   layer_set_update_proc(datetime_layer, datetime_layer_update_callback);
   layer_add_child(slot_top, datetime_layer);
 
-  if (DEVICE_WIDTH >= 180) { // status tray under the clock (see refresh_status_tray)
+  if (layout_is_wide(DEVICE_WIDTH)) { // status tray under the clock (see refresh_status_tray)
     GBitmap *tray_bmps[3] = { image_charging_icon, image_dnd_icon, image_hourvibe_icon };
     for (int i = 0; i < 3; i++) {
       tray_layers[i] = bitmap_layer_create(GRect(0, 0, 20, 20));
@@ -1586,9 +1608,14 @@ static void window_unload(Window *window) {
   calendar_destroy();
   layer_destroy(datetime_layer);
   layer_destroy(battery_layer);
-  // custom fonts are automatically unloaded at exit - http://forums.getpebble.com/discussion/comment/35808/#Comment_35808
-  layer_remove_from_parent(bitmap_layer_get_layer(bmp_charging_layer));
-  bitmap_layer_destroy(bmp_charging_layer);
+  // Custom fonts are now explicitly unloaded below (see the font block). The
+  // stage-12 system-font fallback (unifont_16/_bold) must NEVER be unloaded, so
+  // *_is_custom flags gate those unloads; climacons is never system-fallback.
+  if (bmp_charging_layer) { // NULL on wide screens (never created there)
+    layer_remove_from_parent(bitmap_layer_get_layer(bmp_charging_layer));
+    bitmap_layer_destroy(bmp_charging_layer);
+    bmp_charging_layer = NULL;
+  }
   for (int i = 0; i < 3; i++) {
     if (tray_layers[i]) { bitmap_layer_destroy(tray_layers[i]); tray_layers[i] = NULL; }
   }
@@ -1603,6 +1630,20 @@ static void window_unload(Window *window) {
   layer_destroy(slot_bot);
   layer_destroy(slot_top);
   layer_destroy(statusbar);
+  // slot_status is the parent of statusbar, so destroy it last (leaf-first).
+  layer_destroy(slot_status);
+  slot_status = NULL;
+
+  // Explicitly unload the custom fonts. Only unload a handle we know is CUSTOM:
+  // if the custom load failed, unifont_16/_bold hold a system font (stage-12
+  // fallback) and fonts_unload_custom_font on a system handle is a bug.
+  if (unifont_16_is_custom)      { fonts_unload_custom_font(unifont_16); }
+  if (unifont_16_bold_is_custom) { fonts_unload_custom_font(unifont_16_bold); }
+  if (climacons)                 { fonts_unload_custom_font(climacons); } // never system-fallback
+  unifont_16 = NULL; unifont_16_bold = NULL; climacons = NULL;
+  cal_normal = NULL; cal_bold = NULL; // alias the unifont handles — null only, no separate unload (double-free)
+  s_climacons_size = 0;               // force a reload if the window is re-created
+  unifont_16_is_custom = unifont_16_bold_is_custom = false;
 }
 
 static void deinit(void) {
@@ -1630,6 +1671,13 @@ void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed)
   *currentTime = *tick_time;
   apply_palette();
   update_time_text();
+  // Refresh center/bottom slot CONTENT every minute (was previously done only by
+  // the per-minute draw callback). A clock2 (2nd-timezone) or date/AM-PM
+  // complication in a center/bottom slot changes each minute; without this it
+  // goes stale. Geometry-only helpers (position_time_layer/ensure_climacons) are
+  // intentionally NOT re-run here.
+  apply_center();
+  apply_bottom();
   refresh_stat_slots(); // keep time-based status-bar slots current
   if ( currentTime->tm_min % 10 == 0) {
     dnd_period_check();
@@ -1821,6 +1869,11 @@ void in_timezone_handler(DictionaryIterator *received, void *context) {
     Tuple *tz_offset = dict_find(received, AK_TIMEZONE_OFFSET);
     if (tz_offset != NULL) {
       timezone_offset = tz_offset->value->int8;
+      // Refresh both rows immediately: a Timezone/clock2 complication may sit in a
+      // center slot (apply_center) or the bottom row (update_datetime_subtext).
+      // Before the draw-callback refactor, apply_bottom's dirty cascade re-ran the
+      // callback which refreshed center too; now the callback is a no-op, so do it here.
+      apply_center();
       update_datetime_subtext();
     }
   if (debug_get()->general) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Timezone received: %d", timezone_offset); }
