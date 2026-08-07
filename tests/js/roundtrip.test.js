@@ -150,4 +150,108 @@ test('budget: normal save fits, oversized custom translations rejected', functio
   assert.strictEqual(wirec.estimateDictSize(accented), 17, 'UTF-8 bytes, not chars, must be charged');
 });
 
+// ============================================================================
+// Stage 5 (issue #5): language / translation fixes C3, H10, H9, L19.
+// Each assertion below reddens if its fix is reverted (noted per case).
+// ============================================================================
+var buildConfigPage = require('../../src/js/configpage');
+
+// Helper: find a translation field spec by key across all config.js sections.
+function fieldByKey(key) {
+  for (var s = 0; s < CONFIG_SPEC.length; s++) {
+    var fields = CONFIG_SPEC[s].fields || [];
+    for (var i = 0; i < fields.length; i++) {
+      if (fields[i].key === key) { return fields[i]; }
+    }
+  }
+  return null;
+}
+
+// --- H10: Russian is reachable ---
+// REDDENS if the RU langTable / LANG_OPTIONS entry is removed: LANGS.RU is
+// undefined and the option list no longer contains Русский.
+test('H10: LANGS.RU exists with the full EN/IT key set, and Русский is selectable', function () {
+  var RU = buildConfigPage.LANGS.RU;
+  var EN = buildConfigPage.LANGS.EN;
+  assert.ok(RU, 'LANGS.RU must exist');
+  var enKeys = Object.keys(EN).sort();
+  var ruKeys = Object.keys(RU).sort();
+  assert.deepStrictEqual(ruKeys, enKeys, 'RU must have the exact same key set as EN');
+  // Spot-check real Cyrillic content (not transliteration or English fallthrough).
+  assert.strictEqual(RU.trans_monday, 'Понедельник');
+  assert.strictEqual(RU.trans_january, 'Январь');
+  assert.strictEqual(RU.trans_abbr_monday, 'Пн');
+  // Every RU string must be non-empty.
+  ruKeys.forEach(function (k) { assert.ok(String(RU[k]).length > 0, 'RU.' + k + ' must be non-empty'); });
+  // The dropdown offers Русский -> RU.
+  var hasRU = buildConfigPage.LANG_OPTIONS.some(function (o) { return o[0] === 'Русский' && o[1] === 'RU'; });
+  assert.ok(hasRU, "LANG_OPTIONS must contain ['Русский','RU']");
+});
+
+// --- H9: byte-buffer overflow avoided by clamping input maxlength ---
+// REDDENS if the maxes are restored to 6 (AM/PM) or 11 (full months): a maxed
+// 2-byte Cyrillic string would then exceed the watch's abbrTime/monthsNames
+// buffers.
+test('H9: config maxes are 5 (AM/PM) and 10 (full months)', function () {
+  assert.strictEqual(fieldByKey('trans_time_am').max, 5, 'AM maxlength must be 5');
+  assert.strictEqual(fieldByKey('trans_time_pm').max, 5, 'PM maxlength must be 5');
+  assert.strictEqual(fieldByKey('trans_january').max, 10, 'full month maxlength must be 10');
+  assert.strictEqual(fieldByKey('trans_december').max, 10, 'full month maxlength must be 10');
+  // Unchanged neighbours guard against an over-broad edit.
+  assert.strictEqual(fieldByKey('trans_abbr_january').max, 3, 'abbr month stays 3');
+  assert.strictEqual(fieldByKey('trans_monday').max, 12, 'full day stays 12');
+  // The chosen maxes keep the built-in RU strings within their byte buffers.
+  function utf8Len(str) { return unescape(encodeURIComponent(str)).length; }
+  var RU = buildConfigPage.LANGS.RU;
+  assert.ok(utf8Len(RU.trans_september) <= 20, 'RU full month fits monthsNames[21] (20 bytes + NUL)');
+  assert.ok(utf8Len(RU.trans_abbr_monday) <= 5, 'RU abbr day fits abbrDaysOfWeek[6]');
+});
+
+// --- L19a: unescaped JSON.stringify in <script> lets a value break out ---
+// REDDENS if jsInline() drops the .replace(): "</script>" stays literal and can
+// close the <script> element early.
+test('L19: jsInline escapes < so </script> cannot close the element', function () {
+  var out = buildConfigPage.jsInline({ trans_january: '</script><img src=x>' });
+  assert.strictEqual(out.indexOf('</script>'), -1, 'no literal </script> may survive');
+  assert.ok(out.indexOf('\\u003c/script>') !== -1, 'the < of </script> must become \\u003c');
+  // The escaped text still parses back to the identical value.
+  assert.strictEqual(JSON.parse(out).trans_january, '</script><img src=x>');
+  // End-to-end: a hostile stored trans string cannot inject a raw </script>.
+  var page = buildConfigPage(CONFIG_SPEC, { trans_january: 'x</script>y' });
+  assert.ok(page.indexOf('x</script>y') === -1, 'generated page must not carry a raw injected </script>');
+});
+
+// --- L19b: app.js persists only known keys (allowlist) ---
+// REDDENS if storableKeys is bypassed (the old `for (var k in full)` copy): an
+// arbitrary key would ride into the stored blob.
+test('L19: storableKeys keeps real settings and lang_mode, drops unknown keys', function () {
+  var decoded = {
+    theme: 3, language: 'RU', trans_january: 'Январь',
+    lang_mode: 'custom', evil: 1, n: [1, 2, 3]
+  };
+  var out = wirec.storableKeys(decoded, WIRE_KEYS);
+  assert.strictEqual(out.theme, 3, 'a wire key is kept');
+  assert.strictEqual(out.language, 'RU', 'language is kept');
+  assert.strictEqual(out.trans_january, 'Январь', 'trans_* is kept');
+  assert.strictEqual(out.lang_mode, 'custom', 'lang_mode is kept (local-only flag)');
+  assert.ok(!('evil' in out), 'an unknown key must be dropped');
+  assert.ok(!('n' in out), "the positional 'n' array is not a stored key");
+});
+
+// --- C3: a persisted Custom choice keeps the selector on Custom ---
+// REDDENS if langSelFor loses the lang_mode branch: {lang_mode:'custom'} would
+// resolve back to the language code, the page would reopen on that language, and
+// onLang()->langFill() would overwrite the user's custom strings.
+test('C3: langSelFor keeps Custom persisted, otherwise resolves the language', function () {
+  // Custom persisted -> stays Custom even though a real language code is stored.
+  assert.strictEqual(buildConfigPage.langSelFor({ lang_mode: 'custom', language: 'EN' }), 'custom');
+  assert.strictEqual(buildConfigPage.langSelFor({ language: 'custom' }), 'custom');
+  // Non-custom: the stored language decides the selection.
+  assert.strictEqual(buildConfigPage.langSelFor({ language: 'RU' }), 'RU');
+  assert.strictEqual(buildConfigPage.langSelFor({ lang_mode: 'RU', language: 'RU' }), 'RU');
+  assert.strictEqual(buildConfigPage.langSelFor({}), 'EN');
+  // An unknown language falls back to Custom (existing strings preserved).
+  assert.strictEqual(buildConfigPage.langSelFor({ language: 'ZZ' }), 'custom');
+});
+
 console.log('\nAll ' + pass + ' JS round-trip tests passed.');
