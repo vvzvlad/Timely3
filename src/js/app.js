@@ -95,8 +95,10 @@ function sendWeather(temp, cond_icon, city, lat, lon) {
     message_type: 106,
     weather_temp: temp,
     weather_cond: cond_icon,
-    weather_city: city || '',
   };
+  // Omit weather_city on the error path (city null/undefined) so the watch keeps
+  // its last-known city; send it (even "") whenever a string was passed. (audit H3)
+  if (city != null) { msg.weather_city = city; }
   // Coordinates power the sunrise/sunset complications and the Auto theme.
   if (lat != null && lon != null) {
     msg.weather_lat = lat.toFixed(2);
@@ -156,7 +158,7 @@ function saveWatchVersion(e) {
     console.log("Watch Version: " + e.payload.send_watch_version);
     console.log("Config Version: " + e.payload.send_config_version);
     window.localStorage.version_watch = e.payload.send_watch_version;
-    window.localStorage.version_config = e.payload.send_config_version;
+    // version_config is informational only; nothing reads it back, so it is not stored (audit M12)
 }
 
 function saveBatteryValue(e) {
@@ -236,7 +238,7 @@ function reverseGeocode(latitude, longitude, cb) {
   req.timeout = 10000;
   req.onload = function() {
     var city = "";
-    try { var r = JSON.parse(req.responseText); city = r.city || r.locality || ""; } catch (e) {}
+    try { var r = JSON.parse(req.responseText); city = String(r.city || r.locality || ""); } catch (e) {} // coerce so a numeric provider value ships as a cstring tuple (audit M5)
     cb(city);
   };
   req.onerror = function() { cb(""); };
@@ -274,7 +276,7 @@ function weatherLocationSuccess(pos) {
 
 function locationError(err) {
   console.warn('Weather: location error (' + err.code + '): ' + err.message);
-  sendWeather(998, CLIMACON['compass']);
+  sendWeather(999, CLIMACON['compass']); // 999 = failure sentinel the watch's fast-retry gate keys on (audit H3)
 }
 
 function isItNight() {

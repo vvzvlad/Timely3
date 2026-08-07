@@ -12,7 +12,7 @@
 #include "suntimes.h"
 #define DEBUGLOG 0
 #define TRANSLOG 0
-#define CONFIG_VERSION "3.0" // config-protocol version (own sequence); major bump: the save wire format changed
+#define CONFIG_VERSION "3.0" // informational version tag sent to the JS bundle for logging only; NOT enforced (no protocol guard was ever wired)
 /*
  * If you fork this code and release the resulting app, please be considerate and change all the appropriate values in appinfo.json 
  *
@@ -995,7 +995,22 @@ void battery_layer_update_callback(Layer *me, GContext* ctx) {
   }
 }
 
+// Return a NUL-terminated C string from a dictionary tuple, or NULL if the
+// tuple is missing / not a cstring / empty. Forces a terminator at the last
+// byte of the tuple payload so a maxed multibyte string can never be read
+// past its declared length. (audit M5)
+static const char *tuple_str(Tuple *t) {
+  if (t == NULL || t->type != TUPLE_CSTRING || t->length == 0) { return NULL; }
+  // Index through a plain char* rather than the char[0] flexible-array member
+  // directly, so -Wzero-length-bounds (strict-check -Werror) stays quiet; the
+  // runtime length is a real, payload-bounded value the compiler cannot see.
+  char *cs = (char *)t->value->cstring;
+  cs[t->length - 1] = '\0';
+  return cs;
+}
+
 static void request_weather(void *data) {
+  weather_request = NULL; // the AppTimer has already fired; clear the handle up front so early returns cannot leave it stale (audit H4)
   if (debug_get()->general) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Requesting Weather [%d/%d]", weather_state()->failures, weather_state()->requests); }
   weather_state()->condition[0] = 'h'; weather_state()->condition[1] = '\0'; // h = updating 'cloud' icon
   weather_mark_dirty(); // update UI element to indicate we're fetching weather...
@@ -1013,10 +1028,10 @@ static void request_weather(void *data) {
   }
   app_message_outbox_send();
   weather_state()->requests++;
-  weather_request = NULL;
 }
 
 static void request_timezone(void *data) {
+  timezone_request = NULL; // the AppTimer has already fired; clear the handle up front so early returns cannot leave it stale (audit H4)
   DictionaryIterator *iter;
   AppMessageResult result = app_message_outbox_begin(&iter);
   if (iter == NULL) {
@@ -1027,7 +1042,6 @@ static void request_timezone(void *data) {
     return;
   }
   app_message_outbox_send();
-  timezone_request = NULL;
 }
 
 static void watch_version_send(void *data) {
@@ -1058,6 +1072,7 @@ static void watch_version_send(void *data) {
 }
 
 static void battery_status_send(void *data) {
+  battery_sending = NULL; // the AppTimer has already fired; clear the handle up front so early returns cannot leave it stale (audit H4)
   static uint8_t sent_battery_percent = 10;
   static bool sent_battery_charging = false;
   static bool sent_battery_plugged = false;
@@ -1068,7 +1083,6 @@ static void battery_status_send(void *data) {
      & (battery_charging == sent_battery_charging )
      & (battery_plugged  == sent_battery_plugged  ) ) {
     if (debug_get()->general) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "repeat battery reading"); }
-    battery_sending = NULL;
     return; // no need to resend the same value
   }
   DictionaryIterator *iter;
@@ -1101,7 +1115,6 @@ static void battery_status_send(void *data) {
   sent_battery_percent  = battery_percent;
   sent_battery_charging = battery_charging;
   sent_battery_plugged  = battery_plugged;
-  battery_sending = NULL;
 }
 
 void set_status_charging_icon() {
@@ -1584,7 +1597,7 @@ void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed)
   }
   if (bluetooth_connected && adv_settings_get()->weather_update) {
     if (adv_settings_get()->weather_update && (currentTime->tm_min + 60) % adv_settings_get()->weather_update == 0) {
-      weather_request = app_timer_register(1000, &request_weather, NULL);
+      if (weather_request == NULL) { weather_request = app_timer_register(1000, &request_weather, NULL); } // don't overwrite a live pending timer (audit H4)
     } else if (weather_state()->current == 999 && weather_state()->requests < 5) {
       // ANDROIIIIIDRAGE  (or, someone who's got weather enabled but location services disabled)
       if (weather_request == NULL) { weather_request = app_timer_register(1000, &request_weather, NULL); } // for Android's slow JS...
@@ -1665,17 +1678,32 @@ void in_weather_handler(DictionaryIterator *received, void *context) {
     Tuple *appkey     = dict_find(received, AK_WEATHER_TEMP);
     if (appkey != NULL)     { weather_state()->current = appkey->value->int16; }
     appkey = dict_find(received, AK_WEATHER_COND);
-    if (appkey != NULL)     { strncpy(weather_state()->condition, appkey->value->cstring, sizeof(weather_state()->condition)-1); }
+    { const char *s = tuple_str(appkey);
+      if (s != NULL) {
+        strncpy(weather_state()->condition, s, sizeof(weather_state()->condition)-1);
+        weather_state()->condition[sizeof(weather_state()->condition)-1] = '\0';
+      } }
     appkey = dict_find(received, AK_WEATHER_CITY);
-    if (appkey != NULL)     { strncpy(weather_state()->city, appkey->value->cstring, sizeof(weather_state()->city)-1); }
+    { const char *s = tuple_str(appkey);
+      if (s != NULL) {
+        strncpy(weather_state()->city, s, sizeof(weather_state()->city)-1);
+        weather_state()->city[sizeof(weather_state()->city)-1] = '\0';
+      } }
     // Coordinates feed the sunrise/sunset complications and the Auto theme.
     Tuple *lat = dict_find(received, AK_WEATHER_LAT);
     Tuple *lon = dict_find(received, AK_WEATHER_LON);
-    if (lat != NULL && lon != NULL) {
-      strncpy(adv_settings_get()->weather_lat, lat->value->cstring, sizeof(adv_settings_get()->weather_lat)-1);
-      strncpy(adv_settings_get()->weather_lon, lon->value->cstring, sizeof(adv_settings_get()->weather_lon)-1);
+    const char *slat = tuple_str(lat), *slon = tuple_str(lon);
+    if (slat != NULL && slon != NULL &&
+        (strcmp(slat, adv_settings_get()->weather_lat) != 0 ||
+         strcmp(slon, adv_settings_get()->weather_lon) != 0)) {
+      // Only copy + persist + repaint when the location actually changed, to
+      // avoid a full 244-byte flash write on every weather response (audit M6).
+      strncpy(adv_settings_get()->weather_lat, slat, sizeof(adv_settings_get()->weather_lat)-1);
+      adv_settings_get()->weather_lat[sizeof(adv_settings_get()->weather_lat)-1] = '\0';
+      strncpy(adv_settings_get()->weather_lon, slon, sizeof(adv_settings_get()->weather_lon)-1);
+      adv_settings_get()->weather_lon[sizeof(adv_settings_get()->weather_lon)-1] = '\0';
       persist_write_data(PK_ADV_SETTINGS, adv_settings_get(), sizeof(persist_adv_settings));
-      apply_palette(); // Auto theme may flip with a known location
+      apply_palette(); // Auto theme may flip only when the location actually changes
     }
     weather_mark_dirty();
     if (debug_get()->general) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Weather received [%d/%d]: %d, %s", weather_state()->failures, weather_state()->requests, weather_state()->current, weather_state()->condition); }
@@ -1795,7 +1823,11 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
     // AK_STRFTIME_FORMAT == custom strftime string used when date_format == 255
     Tuple *sfmt = dict_find(received, AK_STRFTIME_FORMAT);
     if (sfmt != NULL) {
-      strncpy(adv_settings_get()->custom_date_fmt, sfmt->value->cstring, sizeof(adv_settings_get()->custom_date_fmt)-1);
+      const char *s = tuple_str(sfmt);
+      if (s != NULL) {
+        strncpy(adv_settings_get()->custom_date_fmt, s, sizeof(adv_settings_get()->custom_date_fmt)-1);
+        adv_settings_get()->custom_date_fmt[sizeof(adv_settings_get()->custom_date_fmt)-1] = '\0';
+      }
       update_date_text();
     }
 
@@ -2006,17 +2038,22 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
     // AK_LANGUAGE == language, e.g. EN
     Tuple *chosen_language = dict_find(received, AK_LANGUAGE);
     if (chosen_language != NULL) {
-      if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Language is set to %s", chosen_language->value->cstring); }
-      strncpy(lang_gen_get()->language, chosen_language->value->cstring, sizeof(lang_gen_get()->language)-1);
-      set_unifont();
+      const char *s = tuple_str(chosen_language);
+      if (s != NULL) {
+        if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Language is set to %s", s); }
+        strncpy(lang_gen_get()->language, s, sizeof(lang_gen_get()->language)-1);
+        lang_gen_get()->language[sizeof(lang_gen_get()->language)-1] = '\0';
+        set_unifont();
+      }
     }
 
     // AK_TRANS_ABBR_*DAY == abbrDaysOfWeek // localized Su Mo Tu We Th Fr Sa, max 2 characters
     for (int i = AK_TRANS_ABBR_SUNDAY; i <= AK_TRANS_ABBR_SATURDAY; i++ ) {
       translation = dict_find(received, i);
-      if (translation != NULL) {
-        if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, translation->value->cstring); }
-        strncpy(lang_gen_get()->abbrDaysOfWeek[i - AK_TRANS_ABBR_SUNDAY], translation->value->cstring, sizeof(lang_gen_get()->abbrDaysOfWeek[i - AK_TRANS_ABBR_SUNDAY])-1);
+      const char *s = tuple_str(translation);
+      if (s != NULL) {
+        if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, s); }
+        strncpy(lang_gen_get()->abbrDaysOfWeek[i - AK_TRANS_ABBR_SUNDAY], s, sizeof(lang_gen_get()->abbrDaysOfWeek[i - AK_TRANS_ABBR_SUNDAY])-1);
         lang_gen_get()->abbrDaysOfWeek[i - AK_TRANS_ABBR_SUNDAY][sizeof(lang_gen_get()->abbrDaysOfWeek[i - AK_TRANS_ABBR_SUNDAY])-1] = '\0'; // strncpy leaves a maxed multibyte buffer unterminated (H9)
       }
     }
@@ -2024,9 +2061,10 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
     // AK_TRANS_*DAY == daysOfWeek // localized Sunday through Saturday, max 12 characters
     for (int i = AK_TRANS_SUNDAY; i <= AK_TRANS_SATURDAY; i++ ) {
       translation = dict_find(received, i);
-      if (translation != NULL) {
-        if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, translation->value->cstring); }
-        strncpy(lang_days_get()->DaysOfWeek[i - AK_TRANS_SUNDAY], translation->value->cstring, sizeof(lang_days_get()->DaysOfWeek[i - AK_TRANS_SUNDAY])-1);
+      const char *s = tuple_str(translation);
+      if (s != NULL) {
+        if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, s); }
+        strncpy(lang_days_get()->DaysOfWeek[i - AK_TRANS_SUNDAY], s, sizeof(lang_days_get()->DaysOfWeek[i - AK_TRANS_SUNDAY])-1);
         lang_days_get()->DaysOfWeek[i - AK_TRANS_SUNDAY][sizeof(lang_days_get()->DaysOfWeek[i - AK_TRANS_SUNDAY])-1] = '\0'; // strncpy leaves a maxed multibyte buffer unterminated (H9)
       }
     }
@@ -2034,9 +2072,10 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
     // AK_TRANS_ABBR_*MONTH == monthsOfYear // localized month name abbreviations, max 3 characters
     for (int i = AK_TRANS_ABBR_JANUARY; i <= AK_TRANS_ABBR_DECEMBER; i++ ) {
       translation = dict_find(received, i);
-      if (translation != NULL) {
-        if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, translation->value->cstring); }
-        strncpy(lang_gen_get()->abbrMonthsNames[i - AK_TRANS_ABBR_JANUARY], translation->value->cstring, sizeof(lang_gen_get()->abbrMonthsNames[i - AK_TRANS_ABBR_JANUARY])-1);
+      const char *s = tuple_str(translation);
+      if (s != NULL) {
+        if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, s); }
+        strncpy(lang_gen_get()->abbrMonthsNames[i - AK_TRANS_ABBR_JANUARY], s, sizeof(lang_gen_get()->abbrMonthsNames[i - AK_TRANS_ABBR_JANUARY])-1);
         lang_gen_get()->abbrMonthsNames[i - AK_TRANS_ABBR_JANUARY][sizeof(lang_gen_get()->abbrMonthsNames[i - AK_TRANS_ABBR_JANUARY])-1] = '\0'; // strncpy leaves a maxed multibyte buffer unterminated (H9)
       }
     }
@@ -2044,9 +2083,10 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
     // AK_TRANS_*MONTH == monthsOfYear // localized month names, max 12 characters
     for (int i = AK_TRANS_JANUARY; i <= AK_TRANS_DECEMBER; i++ ) {
       translation = dict_find(received, i);
-      if (translation != NULL) {
-        if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, translation->value->cstring); }
-        strncpy(lang_months_get()->monthsNames[i - AK_TRANS_JANUARY], translation->value->cstring, sizeof(lang_months_get()->monthsNames[i - AK_TRANS_JANUARY])-1);
+      const char *s = tuple_str(translation);
+      if (s != NULL) {
+        if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, s); }
+        strncpy(lang_months_get()->monthsNames[i - AK_TRANS_JANUARY], s, sizeof(lang_months_get()->monthsNames[i - AK_TRANS_JANUARY])-1);
         // strncpy does not NUL-terminate when the source fills the buffer. A maxed
         // multibyte (Cyrillic) name is exactly sizeof-1 bytes, so terminate the
         // last byte explicitly to avoid an over-read (H9).
@@ -2057,9 +2097,10 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
     // AK_TRANS_CONNECTED / AK_TRANS_DISCONNECTED == status text, e.g. "Linked" "NOLINK", max 9 characters
     for (int i = AK_TRANS_CONNECTED; i <= AK_TRANS_DISCONNECTED; i++ ) {
       translation = dict_find(received, i);
-      if (translation != NULL) {
-        if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, translation->value->cstring); }
-        strncpy(lang_gen_get()->statuses[i - AK_TRANS_CONNECTED], translation->value->cstring, sizeof(lang_gen_get()->statuses[i - AK_TRANS_CONNECTED])-1);
+      const char *s = tuple_str(translation);
+      if (s != NULL) {
+        if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, s); }
+        strncpy(lang_gen_get()->statuses[i - AK_TRANS_CONNECTED], s, sizeof(lang_gen_get()->statuses[i - AK_TRANS_CONNECTED])-1);
         lang_gen_get()->statuses[i - AK_TRANS_CONNECTED][sizeof(lang_gen_get()->statuses[i - AK_TRANS_CONNECTED])-1] = '\0'; // strncpy leaves a maxed multibyte buffer unterminated (H9)
       }
     }
@@ -2070,9 +2111,10 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
     // AK_TRANS_TIME_AM / AK_TRANS_TIME_PM == AM / PM text, e.g. "AM" "PM" :), max 5 characters
     for (int i = AK_TRANS_TIME_AM; i <= AK_TRANS_TIME_PM; i++ ) {
       translation = dict_find(received, i);
-      if (translation != NULL) {
-        if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, translation->value->cstring); }
-        strncpy(lang_gen_get()->abbrTime[i - AK_TRANS_TIME_AM], translation->value->cstring, sizeof(lang_gen_get()->abbrTime[i - AK_TRANS_TIME_AM])-1);
+      const char *s = tuple_str(translation);
+      if (s != NULL) {
+        if (debug_get()->language) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "translation for key %d is %s", i, s); }
+        strncpy(lang_gen_get()->abbrTime[i - AK_TRANS_TIME_AM], s, sizeof(lang_gen_get()->abbrTime[i - AK_TRANS_TIME_AM])-1);
         // strncpy leaves the buffer unterminated when the source fills it; a maxed
         // multibyte (Cyrillic) AM/PM string is sizeof-1 bytes, so NUL the last byte
         // explicitly to avoid an over-read (H9).
@@ -2209,7 +2251,7 @@ static void init(void) {
   if (TRANSLOG == 1) { debug_get()->language = true; }
 
   if (adv_settings_get()->weather_update) {
-    weather_request = app_timer_register(1250, &request_weather, NULL);
+    weather_request = app_timer_register(1250, &request_weather, NULL); // one-shot init registration: runs once at startup where the handle is guaranteed NULL (audit H4)
     //request_weather(NULL);
   }
 
