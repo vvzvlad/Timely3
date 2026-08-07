@@ -6,6 +6,19 @@
 // (its own `static` buffer, or a pointer into a lang/weather table), because the
 // view's text_layer_set_text() does not copy — a stack-buffer return would
 // dangle. See tests/test_complications.c.
+// struct tm must be COMPLETE here: the renderers read ctx->now->tm_mon etc.
+// The Pebble target compiles with -D_TIME_H_, which stubs the standard <time.h>
+// (struct tm comes from the SDK headers instead), so on-target the type would
+// stay incomplete and every dereference fails under -Werror. timefmt.h avoids
+// this by only taking `const struct tm *` and never dereferencing it; this
+// module cannot. Pull the SDK header in for the target build only — the host
+// test build keeps the real <time.h> and stays free of any Pebble dependency.
+#if defined(_TIME_H_) || defined(PBL_SDK_3)
+#include <pebble.h>
+#else
+#include <time.h>
+#endif
+
 #include "complications.h"
 #include "settings.h"
 #include "locale.h"
