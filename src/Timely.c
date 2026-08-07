@@ -107,6 +107,7 @@ static bool showing_statusbar = true;
 #define PK_LANG_DAYS     4
 #define PK_DEBUGGING     5
 #define PK_ADV_SETTINGS  6
+#define PK_SETTINGS_EXT  7 // versioned home for all NEW advanced settings (PK_ADV_SETTINGS is frozen at 244B)
 
 // define the appkeys used for appMessages
 #define AK_STYLE_INV     0
@@ -1773,7 +1774,10 @@ void in_weather_handler(DictionaryIterator *received, void *context) {
       adv_settings_get()->weather_lat[sizeof(adv_settings_get()->weather_lat)-1] = '\0';
       strncpy(adv_settings_get()->weather_lon, slon, sizeof(adv_settings_get()->weather_lon)-1);
       adv_settings_get()->weather_lon[sizeof(adv_settings_get()->weather_lon)-1] = '\0';
-      persist_write_data(PK_ADV_SETTINGS, adv_settings_get(), sizeof(persist_adv_settings));
+      int wrote = persist_write_data(PK_ADV_SETTINGS, adv_settings_get(), sizeof(persist_adv_settings));
+      if (wrote < (int)sizeof(persist_adv_settings)) {
+        app_log(APP_LOG_LEVEL_WARNING, __FILE__, __LINE__, "persist_write_data(PK_ADV_SETTINGS) failed: wrote %d of %d bytes", wrote, (int)sizeof(persist_adv_settings));
+      }
       apply_palette(); // Auto theme may flip only when the location actually changes
     }
     weather_mark_dirty();
@@ -2208,6 +2212,12 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
     if (debug_get()->general) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Wrote %d bytes into debug", result); }
     result = persist_write_data(PK_ADV_SETTINGS, adv_settings_get(), sizeof(persist_adv_settings) );
     if (debug_get()->general) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Wrote %d bytes into adv_settings", result); }
+    // Explicit failure log (audit M1): PK_ADV_SETTINGS sits at the 244/256 ceiling,
+    // so a short/negative write means advanced settings silently stopped saving.
+    if (result < (int)sizeof(persist_adv_settings)) { app_log(APP_LOG_LEVEL_WARNING, __FILE__, __LINE__, "persist_write_data(PK_ADV_SETTINGS) failed: wrote %d of %d bytes", result, (int)sizeof(persist_adv_settings)); }
+    result = persist_write_data(PK_SETTINGS_EXT, settings_ext_get(), sizeof(persist_settings_ext) );
+    if (debug_get()->general) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Wrote %d bytes into settings_ext", result); }
+    if (result < (int)sizeof(persist_settings_ext)) { app_log(APP_LOG_LEVEL_WARNING, __FILE__, __LINE__, "persist_write_data(PK_SETTINGS_EXT) failed: wrote %d of %d bytes", result, (int)sizeof(persist_settings_ext)); }
 
     // ==== Implemented SDK ====
     // Battery
@@ -2315,6 +2325,11 @@ static void init(void) {
     //persist_write_data(PK_ADV_SETTINGS, adv_settings_get(), sizeof(persist_adv_settings) ); // XXX TODO reset to defaults, for testing...
     if (persist_exists(PK_ADV_SETTINGS)) {
       persist_read_data(PK_ADV_SETTINGS, adv_settings_get(), sizeof(persist_adv_settings) );
+    }
+    // Extended settings: a missing key leaves the settings.c defaults in place;
+    // a shorter stored blob (older version) leaves appended fields at default too.
+    if (persist_exists(PK_SETTINGS_EXT)) {
+      persist_read_data(PK_SETTINGS_EXT, settings_ext_get(), sizeof(persist_settings_ext) );
     }
   }
   // re-initialize this, if it was set, since we're storing those values persistently as well...

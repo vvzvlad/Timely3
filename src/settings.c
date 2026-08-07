@@ -62,5 +62,13 @@ static persist_adv_settings s_adv = {
   .weather_icons = 0 // Default: colour on colour watches, B&W on the rest
 };
 
+// Extended settings (PK_SETTINGS_EXT). Holds the defaults for a fresh install or
+// a missing key; a shorter/absent stored blob leaves later fields at these values.
+static persist_settings_ext s_ext = {
+  .version = SETTINGS_EXT_VERSION,
+  // (future advanced settings default here)
+};
+
 persist *settings_get(void) { return &s_settings; }
 persist_adv_settings *adv_settings_get(void) { return &s_adv; }
+persist_settings_ext *settings_ext_get(void) { return &s_ext; }
