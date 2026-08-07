@@ -11,8 +11,27 @@
 set -eu
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
-SDK="${HOME}/.pebble-sdk/SDKs/current/sdk-core/pebble"
 CC="arm-none-eabi-gcc"
+
+# Locate the SDK's per-platform headers instead of hardcoding one path. `pebble
+# sdk install latest` puts them under ~/.pebble-sdk (a symlink to
+# ~/.local/share/pebble-sdk); PEBBLE_SDK overrides for a non-standard install.
+# Fail with a clear, actionable message if none is found.
+SDK=""
+for cand in \
+  "${PEBBLE_SDK:-}" \
+  "${HOME}/.pebble-sdk/SDKs/current/sdk-core/pebble" \
+  "${HOME}/.local/share/pebble-sdk/SDKs/current/sdk-core/pebble"
+do
+  if [ -n "$cand" ] && [ -d "$cand" ]; then SDK="$cand"; break; fi
+done
+if [ -z "$SDK" ]; then
+  echo "strict-check: Pebble SDK headers not found." >&2
+  echo "  Looked for SDKs/current/sdk-core/pebble under ~/.pebble-sdk and ~/.local/share/pebble-sdk." >&2
+  echo "  Install with:  pebble sdk install latest" >&2
+  echo "  or point PEBBLE_SDK at an existing .../sdk-core/pebble directory." >&2
+  exit 2
+fi
 
 # Exact cloud flag set (see a failing cloud log): -Werror with the same
 # -Wno-error= relaxations. Full compile to /dev/null so codegen warnings appear.

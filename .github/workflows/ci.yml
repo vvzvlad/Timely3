@@ -14,11 +14,12 @@ jobs:
 
       # Pure-logic modules compile and run on the host (no Pebble SDK needed),
       # covering layout, calendar, suntimes, time/date formatting, vibes and the
-      # clock-font selection. The full per-platform SDK build + warning-strict
-      # compile run locally via `tools/test.sh`.
+      # clock-font selection. Single host-test flag set, identical to Makefile /
+      # justfile / tools/test.sh. The full per-platform SDK build + warning-strict
+      # compile run in the `arm` job below (and locally via tools/test.sh).
       - name: Host unit tests
         run: |
-          gcc -std=c11 -DUNIT_TEST -Isrc -Itests tests/test_*.c \
+          gcc -std=c11 -Wall -Wextra -Isrc -Itests tests/test_*.c \
             src/layout.c src/calendar.c src/suntimes.c src/timefmt.c src/vibes.c src/math.c \
             -lm -o timely_utest
           ./timely_utest
@@ -26,6 +27,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      # Version single-source: package.json is authoritative; fail if the
+      # src/splash.c APP_VERSION drifts from it.
+      - name: Version single-source check
+        run: sh tools/check-version.sh
+
+      # The AK_* #defines in src/Timely.c must be a bijection with package.json
+      # messageKeys (the three config layers have to agree).
+      - name: App-key bijection check
+        run: sh tools/check-appkeys.sh
 
       - name: PebbleKit JS syntax check
         run: |
@@ -39,3 +50,54 @@ jobs:
       # webviewclosed handler. Fails CI on any settings-loss regression.
       - name: JS round-trip tests
         run: node --test tests/js/
+
+  arm:
+    name: ARM build + strict compile (all platforms)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # The SDK is a large download pebble.nix does not provide; cache it across
+      # runs keyed on the flake lock so a lockfile bump refetches.
+      - name: Cache Pebble SDK
+        uses: actions/cache@v4
+        with:
+          path: ~/.pebble-sdk
+          key: pebble-sdk-${{ hashFiles('flake.lock') }}
+          restore-keys: pebble-sdk-
+
+      - name: Install Pebble SDK (first run / cache miss)
+        run: |
+          if [ ! -d "$HOME/.pebble-sdk/SDKs/current" ]; then
+            nix develop --command pebble sdk install latest
+          else
+            echo "SDK restored from cache"
+          fi
+
+      # Real per-platform build (all 4 targets from package.json). Also generates
+      # the per-platform headers that strict-check reuses.
+      - name: Build (all platforms)
+        run: nix develop --command pebble build
+
+      # Guards the misaligned-relocation class that shipped an unlaunchable 0.0.7.
+      # Runs only when the script exists so the workflow also passes on refs that
+      # predate it (the script is currently absent — tracked separately).
+      - name: Relocation alignment check
+        run: |
+          if [ -f tools/reloc-check.sh ]; then
+            nix develop --command sh tools/reloc-check.sh
+          else
+            echo "::warning::tools/reloc-check.sh absent on this ref - skipping"
+          fi
+
+      # Compile every source per platform under the exact cloud -Werror flag set;
+      # fails on any error OR warning. A hard gate now that the -Wno-error debt is
+      # paid (flake.nix no longer exports -Wno-error).
+      - name: Strict per-platform compile (cloud flags)
+        run: nix develop --command sh tools/strict-check.sh

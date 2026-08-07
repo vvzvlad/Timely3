@@ -102,8 +102,9 @@ jobs:
             echo "::warning::tools/reloc-check.sh absent on this ref - skipping"
           fi
 
+      # Hard gate now that the -Wno-error debt is paid (flake.nix no longer
+      # exports -Wno-error and tests/test_layout.c is -Wextra clean).
       - name: Strict per-platform compile (cloud flags)
-        continue-on-error: true # advisory until the -Wno-error debt is paid off
         run: nix develop --command sh tools/strict-check.sh
 
       - name: Upload .pbw

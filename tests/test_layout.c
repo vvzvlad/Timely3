@@ -55,12 +55,14 @@ UTEST(layout, bands_collapse_and_sum) {
 
 // Pure clock-font selection: scales with band height; Roboto only on wide+tall.
 UTEST(clockfont, scales_with_band_and_width) {
-  ASSERT_EQ(CLOCK_FONT_ROBOTO_49, clock_font_for(200, 65)); // emery, tall band
-  ASSERT_EQ(CLOCK_FONT_LECO_42,   clock_font_for(200, 55)); // wide but shorter -> LECO
-  ASSERT_EQ(CLOCK_FONT_LECO_42,   clock_font_for(144, 70)); // narrow never gets Roboto
-  ASSERT_EQ(CLOCK_FONT_LECO_38,   clock_font_for(144, 49)); // 144 default band
-  ASSERT_EQ(CLOCK_FONT_LECO_32,   clock_font_for(144, 40));
-  ASSERT_EQ(CLOCK_FONT_LECO_28,   clock_font_for(144, 30)); // very short
+  // clock_font_for returns the ClockFont enum (unsigned); cast to int so the
+  // comparison with the int enum constants stays signedness-clean under -Wextra.
+  ASSERT_EQ(CLOCK_FONT_ROBOTO_49, (int)clock_font_for(200, 65)); // emery, tall band
+  ASSERT_EQ(CLOCK_FONT_LECO_42,   (int)clock_font_for(200, 55)); // wide but shorter -> LECO
+  ASSERT_EQ(CLOCK_FONT_LECO_42,   (int)clock_font_for(144, 70)); // narrow never gets Roboto
+  ASSERT_EQ(CLOCK_FONT_LECO_38,   (int)clock_font_for(144, 49)); // 144 default band
+  ASSERT_EQ(CLOCK_FONT_LECO_32,   (int)clock_font_for(144, 40));
+  ASSERT_EQ(CLOCK_FONT_LECO_28,   (int)clock_font_for(144, 30)); // very short
 }
 
 // Status icon (charging/DND/hourvibe) docks at the right bar's former origin

@@ -2,12 +2,15 @@
 #   Host unit tests:        run inside `nix develop .#test`
 #   Pebble app + emulator:  run inside `nix develop`
 
+# Single host-test flag set, shared verbatim with Makefile / tools/test.sh and
+# the CI workflows. Test sources are one glob (tests/test_*.c) so a new test file
+# is picked up everywhere; only the host-compilable pure modules are linked.
 cc     := env_var_or_default("CC", "cc")
-cflags := "-I src -I tests -Wall -Wextra -std=c11"
+cflags := "-std=c11 -Wall -Wextra -Isrc -Itests"
 build  := "build"
 emu    := env_var_or_default("EMU", "emery")   # aplite|basalt|chalk|diorite|emery|flint
 shot   := build / ("screenshot-" + emu + ".png")
-test_src := "tests/*.c src/timefmt.c src/layout.c src/calendar.c src/vibes.c src/suntimes.c src/math.c"
+test_src := "tests/test_*.c src/timefmt.c src/layout.c src/calendar.c src/vibes.c src/suntimes.c src/math.c"
 
 # list the available recipes
 default:
