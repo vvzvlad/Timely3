@@ -10,7 +10,7 @@ cflags := "-std=c11 -Wall -Wextra -Isrc -Itests"
 build  := "build"
 emu    := env_var_or_default("EMU", "emery")   # basalt|diorite|emery|flint
 shot   := build / ("screenshot-" + emu + ".png")
-test_src := "tests/test_*.c src/timefmt.c src/layout.c src/calendar.c src/vibes.c src/suntimes.c src/math.c"
+test_src := "tests/test_*.c src/timefmt.c src/layout.c src/calendar.c src/vibes.c src/suntimes.c src/math.c src/complications.c src/settings.c src/locale.c"
 
 # list the available recipes
 default:

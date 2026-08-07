@@ -16,6 +16,7 @@ echo "== host unit tests =="
 out=$(mktemp)
 gcc -std=c11 -Wall -Wextra -Isrc -Itests tests/test_*.c \
     src/layout.c src/calendar.c src/suntimes.c src/timefmt.c src/vibes.c src/math.c \
+    src/complications.c src/settings.c src/locale.c \
     -lm -o "$out"
 "$out"
 rm -f "$out"

@@ -16,17 +16,8 @@
 struct tm *get_time();
 void update_date_text();
 void update_time_text();
-void update_day_text(TextLayer *which_layer);
-void update_month_text(TextLayer *which_layer);
-void update_week_text(TextLayer *which_layer);
-void update_ampm_text(TextLayer *which_layer);
-void update_seconds_text(TextLayer *which_layer);
-char * get_doy_text();
-char * get_dliy_text();
-void update_doy_text(TextLayer *which_layer);
-void update_dliy_text(TextLayer *which_layer);
-void update_doy_dliy_text(TextLayer *which_layer);
-void update_timezone_text(TextLayer *which_layer);
+// The per-slot complication text renderers moved to src/complications.c
+// (complication_render_text); update_slot_text() in Timely.c is the glue.
 void position_connection_layer();
 void position_date_layer();
 void position_time_layer();

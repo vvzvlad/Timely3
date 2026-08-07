@@ -10,6 +10,7 @@
 #include "theme.h"
 #include "splash.h"
 #include "suntimes.h"
+#include "complications.h"
 #define DEBUGLOG 0
 #define TRANSLOG 0
 #define CONFIG_VERSION "3.0" // informational version tag sent to the JS bundle for logging only; NOT enforced (no protocol guard was ever wired)
@@ -327,69 +328,18 @@ struct tm *get_time() {
 
 
 
-// Format the current date per the configured format into a reusable static
-// buffer (returned). update_date_text() drives the date layer; the "Date"
-// complication uses the same formatter so it can live in any slot.
-char *format_current_date(void) {
-
-    //September 11, 2013 => 18 chars, 9 of which could potentially be dual byte utf8 characters
-    //123456789012345678
-    // The non-localized (195..254 table) and custom (255) strftime formats now
-    // live in timefmt.c (datefmt_table_entry / datefmt_render), so they can be
-    // host-unit-tested. See tests/test_timefmt.c.
-    char date_text[32]; // >= 32: holds the widest custom_date_fmt (31 chars + NUL)
-    static char date_string[64]; // localized "%s %s %s" date; sized to avoid truncation under modern gcc
-    // http://www.cplusplus.com/reference/ctime/strftime/
-
-    if (settings_get()->date_format < 195) { // localized date formats...
-      char date_text_2[24];
-      switch ( settings_get()->date_format ) {
-      case 0: // MMMM DD, YYYY (localized)
-        strftime(date_text, sizeof(date_text), "%d, %Y", currentTime); // DD, YYYY
-        snprintf(date_string, sizeof(date_string), "%s %s", lang_months_get()->monthsNames[currentTime->tm_mon], date_text); // prefix Month
-        break;
-      case 1: // MMMM DD, 'YY (localized)
-        strftime(date_text, sizeof(date_text), "%d, '%y", currentTime); // DD, 'YY
-        snprintf(date_string, sizeof(date_string), "%s %s", lang_months_get()->monthsNames[currentTime->tm_mon], date_text); // prefix Month
-        break;
-      case 2: // Mmm DD, YYYY (localized)
-        strftime(date_text, sizeof(date_text), "%d, %Y", currentTime); // DD, YYYY
-        snprintf(date_string, sizeof(date_string), "%s %s", lang_gen_get()->abbrMonthsNames[currentTime->tm_mon], date_text); // prefix Mon
-        break;
-      case 3: // Mmm DD, 'YY (localized)
-        strftime(date_text, sizeof(date_text), "%d, '%y", currentTime); // DD, 'YY
-        snprintf(date_string, sizeof(date_string), "%s %s", lang_gen_get()->abbrMonthsNames[currentTime->tm_mon], date_text); // prefix Mon
-        break;
-      case 11: // D MMMM YYYY (localized)
-        strftime(date_text, sizeof(date_text), "%d", currentTime); // D
-        strftime(date_text_2, sizeof(date_text_2), "%Y", currentTime); // YYYY
-        snprintf(date_string, sizeof(date_string), "%s %s %s", date_text, lang_months_get()->monthsNames[currentTime->tm_mon], date_text_2); // insert Month
-        break;
-      case 12: // D MMMM 'YY (localized)
-        strftime(date_text, sizeof(date_text), "%d", currentTime); // D
-        strftime(date_text_2, sizeof(date_text_2), "'%y", currentTime); // YY
-        snprintf(date_string, sizeof(date_string), "%s %s %s", date_text, lang_months_get()->monthsNames[currentTime->tm_mon], date_text_2); // insert Month
-        break;
-      case 13: // D Mmm YYYY (localized)
-        strftime(date_text, sizeof(date_text), "%d", currentTime); // D
-        strftime(date_text_2, sizeof(date_text_2), "%Y", currentTime); // YYYY
-        snprintf(date_string, sizeof(date_string), "%s %s %s", date_text, lang_gen_get()->abbrMonthsNames[currentTime->tm_mon], date_text_2); // insert Mon
-        break;
-      case 14: // D Mmm 'YY (localized)
-        strftime(date_text, sizeof(date_text), "%d", currentTime); // D
-        strftime(date_text_2, sizeof(date_text_2), "'%y", currentTime); // YY
-        snprintf(date_string, sizeof(date_string), "%s %s %s", date_text, lang_gen_get()->abbrMonthsNames[currentTime->tm_mon], date_text_2); // insert Mon
-        break;
-      }
-    } else { // non-localized date formats: custom (255) or table (195..254)
-      // Sentinel 255 is resolved FIRST (custom format); 195..254 hit the table;
-      // any other value yields "" -- no blind indexing, strftime return checked.
-      datefmt_render(settings_get()->date_format, adv_settings_get()->custom_date_fmt,
-                     currentTime, date_text, sizeof(date_text));
-      snprintf(date_string, sizeof(date_string), "%s", date_text); // straight copy
-    }
-
-    return date_string;
+// Snapshot the live watch state the pure complication renderers read (see
+// src/complications.c). Rebuilt fresh at each use so the values are current; it
+// is just field copies, so this is cheap.
+static ComplicationCtx comp_ctx(void) {
+  return (ComplicationCtx){
+    .now           = currentTime,
+    .tz_offset     = timezone_offset,
+    .watch_battery = battery_percent,
+    .phone_battery = phone_battery_percent,
+    .bluetooth_up  = bluetooth_connected,
+    .weather_city  = weather_state()->city,
+  };
 }
 
 void update_date_text() {
@@ -422,186 +372,16 @@ void update_time_text() {
 
 }
 
-void update_day_text(TextLayer *which_layer) {
-  text_layer_set_text(which_layer, lang_days_get()->DaysOfWeek[currentTime->tm_wday]);
-}
-
-void update_month_text(TextLayer *which_layer) {
-  text_layer_set_text(which_layer, lang_months_get()->monthsNames[currentTime->tm_mon]);
-}
-
-void update_week_text(TextLayer *which_layer) {
-  static char week_text[] = "W00";
-  char week_format[] = "W%V"; // V = ISO 8601 week number (00-53)
-  if (settings_get()->week_format == 1) {
-    // U = Week number with the first Sunday as the first day of week one (00-53)
-    week_format[2] = 'U';
-  } else if (settings_get()->week_format == 2) {
-    // W = Week number with the first Monday as the first day of week one (00-53)
-    week_format[2] = 'W';
-  }
-  strftime(week_text, sizeof(week_text), week_format, currentTime);
-  text_layer_set_text(which_layer, week_text);
-}
-
-void update_ampm_text(TextLayer *which_layer) {
-  if (currentTime->tm_hour < 12 ) {
-    text_layer_set_text(which_layer, lang_gen_get()->abbrTime[0]); //  0-11 AM
-  } else {
-    text_layer_set_text(which_layer, lang_gen_get()->abbrTime[1]); // 12-23 PM
-  }
-}
-
-void update_seconds_text(TextLayer *which_layer) {
-  static char seconds_text[] = "00"; // 00-61
-  strftime(seconds_text, sizeof(seconds_text), "%S", currentTime);
-  text_layer_set_text(which_layer, seconds_text);
-}
-
-void update_location_text(TextLayer *which_layer) {
-  // weather provider's location name (truncated to the slot width)
-  text_layer_set_text(which_layer, weather_state()->city);
-}
-
-#ifndef PBL_PLATFORM_APLITE
-static void sun_time_text(TextLayer *layer, char *buf, bool want_sunset) {
-  float lat, lon, sr, ss;
-  if (currentTime && timezone_offset != TIMEZONE_UNINITIALIZED &&
-      parse_coord(adv_settings_get()->weather_lat, &lat) &&
-      parse_coord(adv_settings_get()->weather_lon, &lon)) {
-    sun_times(lat, lon, currentTime->tm_yday, -timezone_offset / 4.0f, &sr, &ss);
-    float h = want_sunset ? ss : sr;
-    // Normalize the fractional hour into [0,24) BEFORE splitting: (int) truncates
-    // toward zero, so a negative h (tz running ahead of solar time at high lat)
-    // would otherwise give hh/mm the wrong sign and print an hour late.
-    while (h < 0.0f)   { h += 24.0f; }
-    while (h >= 24.0f) { h -= 24.0f; }
-    int hh = (int)h, mm = (int)((h - hh) * 60 + 0.5f);
-    if (mm >= 60) { mm -= 60; hh++; } // rounding may carry into the next hour
-    hh %= 24;                          // wrap 23:60 -> 00:00
-    snprintf(buf, 16, "%d:%02d", hh, mm);
-    text_layer_set_text(layer, buf);
-  } else {
-    text_layer_set_text(layer, "--:--"); // no location yet
-  }
-}
-void update_sunrise_text(TextLayer *l) { static char b[16]; sun_time_text(l, b, false); }
-void update_sunset_text(TextLayer *l)  { static char b[16]; sun_time_text(l, b, true); }
-#else
-void update_sunrise_text(TextLayer *l) { text_layer_set_text(l, "--:--"); }
-void update_sunset_text(TextLayer *l)  { text_layer_set_text(l, "--:--"); }
-#endif
-
-// Moon phase from the date only (Conway's approximation; no coords needed).
-void update_moon_text(TextLayer *which_layer) {
-  static const char *PHASES[8] = { "New", "Wax cres", "1st qtr", "Wax gib",
-                                   "Full", "Wan gib", "Last qtr", "Wan cres" };
-  if (!currentTime) { text_layer_set_text(which_layer, "Moon"); return; }
-  int y = currentTime->tm_year + 1900, m = currentTime->tm_mon + 1, d = currentTime->tm_mday;
-  int r = y % 100; r %= 19; if (r > 9) { r -= 19; }
-  r = ((r * 11) % 30) + m + d; if (m < 3) { r += 2; }
-  r -= (y < 2000) ? 4 : 8;
-  int age = ((r % 30) + 30) % 30; // 0..29 days into the lunation
-  int phase = (age < 2 || age >= 28) ? 0 : (age < 6 ? 1 : (age < 9 ? 2 : (age < 13 ? 3 :
-              (age < 17 ? 4 : (age < 20 ? 5 : (age < 24 ? 6 : 7))))));
-  text_layer_set_text(which_layer, PHASES[phase]);
-}
-
-// Second time zone: local time shifted to clock2_tz (UTC offset, whole hours).
-void update_clock2_text(TextLayer *which_layer) {
-  static char buf[16];
-  if (!currentTime || timezone_offset == TIMEZONE_UNINITIALIZED) {
-    text_layer_set_text(which_layer, "--:--");
-    return;
-  }
-  int local_tz_min = -timezone_offset * 15; // local UTC offset in minutes
-  int utc_min = currentTime->tm_hour * 60 + currentTime->tm_min - local_tz_min;
-  int second_min = (((utc_min + adv_settings_get()->clock2_tz * 60) % 1440) + 1440) % 1440;
-  snprintf(buf, sizeof(buf), "%d:%02d", second_min / 60, second_min % 60);
-  text_layer_set_text(which_layer, buf);
-}
-
-// System-info slots: the connection and the two batteries can be shown in any
-// complication slot, so they share the same TextLayer renderer as the rest.
-void update_wbatt_text(TextLayer *which_layer) {
-  static char buf[16];
-  snprintf(buf, sizeof(buf), "%d%%", battery_percent);
-  text_layer_set_text(which_layer, buf);
-}
-
-void update_pbatt_text(TextLayer *which_layer) {
-  static char buf[16];
-  if (phone_battery_percent >= 0) {
-    snprintf(buf, sizeof(buf), "%d%%", phone_battery_percent);
-  } else {
-    snprintf(buf, sizeof(buf), "--");
-  }
-  text_layer_set_text(which_layer, buf);
-}
-
-void update_conn_text(TextLayer *which_layer) {
-  text_layer_set_text(which_layer, bluetooth_connected
-    ? lang_gen_get()->statuses[0] : lang_gen_get()->statuses[1]);
-}
-
-char * get_doy_text() {
-  static char doy_text[] = "D000";
-  strftime(doy_text, sizeof(doy_text), "D%j", currentTime);
-  return doy_text;
-}
-
-char * get_dliy_text() {
-  static char dliy_text[] = "R000";
-  int days_left = days_left_in_year(currentTime->tm_year + 1900, currentTime->tm_yday);
-  format_days_left_in_year(days_left, dliy_text, sizeof(dliy_text));
-  return dliy_text;
-}
-
-void update_doy_text(TextLayer *which_layer) {
-  text_layer_set_text(which_layer, get_doy_text());
-}
-
-void update_dliy_text(TextLayer *which_layer) {
-  text_layer_set_text(which_layer, get_dliy_text());
-}
-
-void update_doy_dliy_text(TextLayer *which_layer) {
-  static char doy_dliy_text[] = "D000/R000";
-  snprintf(doy_dliy_text, sizeof(doy_dliy_text), "%s/%s", get_doy_text(), get_dliy_text());
-  text_layer_set_text(which_layer, doy_dliy_text);
-}
-
-void update_timezone_text(TextLayer *which_layer) {
-  static char timezone_text[16];
-  format_timezone_offset(timezone_offset, timezone_text, sizeof(timezone_text));
-  text_layer_set_text(which_layer, timezone_text);
-}
-
-// All six configurable slots ("complications") share the same content menu:
-// the status-bar, above-time and above-calendar rows, each with a left and a
-// right slot. Keep these values in sync with src/js/config.js.
+// All six configurable slots ("complications") share the same content menu.
+// The text renderers + the id->flags/icon table now live in the pure,
+// host-testable src/complications.c; this thin glue snapshots the live watch
+// state and asks the table for the string. A NULL return means hidden/unknown
+// (id 0 or out of range): leave the layer's text unchanged, matching the old
+// `default: break`. Keep the id values in sync with src/js/config.js.
 void update_slot_text(TextLayer *layer, uint8_t content) {
-  switch (content) {
-  case 1:  update_day_text(layer);       break; // Day name
-  case 2:  update_month_text(layer);     break; // Month name
-  case 3:  update_week_text(layer);      break; // Week number
-  case 4:  update_timezone_text(layer);  break; // Timezone
-  case 5:  update_ampm_text(layer);      break; // AM/PM
-  case 6:  update_doy_text(layer);       break; // Day of year
-  case 7:  update_dliy_text(layer);      break; // Days left in year
-  case 8:  update_doy_dliy_text(layer);  break; // Day of year / left (alternating)
-  case 9:  update_seconds_text(layer);   break; // Seconds
-  case 10: update_location_text(layer);  break; // Weather location
-  case 11: update_sunrise_text(layer);   break; // Sunrise
-  case 12: update_sunset_text(layer);    break; // Sunset
-  case 13: update_moon_text(layer);      break; // Moon phase
-  case 14: update_clock2_text(layer);    break; // Second time zone
-  case 15: update_wbatt_text(layer);     break; // Watch battery
-  case 16: update_pbatt_text(layer);     break; // Phone battery
-  case 17: update_conn_text(layer);      break; // Bluetooth connection
-  case 18: text_layer_set_text(layer, format_current_date()); break; // Date
-  default: break;                                // 0 = hidden
-  }
+  ComplicationCtx ctx = comp_ctx();
+  const char *t = complication_render_text(content, &ctx);
+  if (t) { text_layer_set_text(layer, t); }
 }
 
 // Lay out a two-slot complication row at (top,h): both set -> halves; one set ->
@@ -642,28 +422,17 @@ void apply_bottom(void) {
 // The two status-bar slots also draw from the unified menu; battery/connection
 // content additionally shows a 16px icon (the only contents with a glyph).
 static GBitmap *stat_slot_icon(uint8_t content) {
-  switch (content) {
-  case 15: return image_watch_icon;  // Watch battery
-  case 16: return image_phone_icon;  // Phone battery
-  case 17: return image_bt16_icon;   // Bluetooth
-  default: return NULL;              // text-only complication
+  switch (complication_icon_slot(content)) {
+  case ICON_WATCH: return image_watch_icon;  // Watch battery
+  case ICON_PHONE: return image_phone_icon;  // Phone battery
+  case ICON_BT:    return image_bt16_icon;   // Bluetooth
+  case ICON_NONE:  return NULL;              // text-only complication
   }
+  return NULL;
 }
 
-// Per-complication behaviour flags — the single source of truth for which slot
-// content id needs a per-second tick and which is a battery reading. Variant B of
-// audit A1: one function the scattered checks route through (the full render/icon
-// table is stage 17).
-#define COMP_NEEDS_SECOND_TICK  (1u << 0)
-#define COMP_IS_BATTERY         (1u << 1)
-
-static uint8_t complication_flags(uint8_t id) {
-  uint8_t f = 0;
-  if (id == 9) { f |= COMP_NEEDS_SECOND_TICK; }       // Seconds
-  if (id == 15 || id == 16) { f |= COMP_IS_BATTERY; } // battery / phone battery
-  return f;
-}
-
+// complication_flags() / COMP_* flags now live in src/complications.c (the
+// single source of truth for the per-second-tick and battery ids).
 static bool is_battery_content(uint8_t c) { return (complication_flags(c) & COMP_IS_BATTERY) != 0; }
 static bool batt_style_is_bar(uint8_t s) { return s == 0 || s == 3; } // 0 bar, 3 bar+icon
 
@@ -1625,7 +1394,7 @@ void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed)
 // guards in refresh_stat_slots()/apply_center()).
 static void refresh_second_slot(TextLayer *layer, uint8_t content) {
   if (layer && (complication_flags(content) & COMP_NEEDS_SECOND_TICK)) {
-    update_seconds_text(layer);
+    update_slot_text(layer, content); // re-renders the per-second complication (Seconds)
   }
 }
 

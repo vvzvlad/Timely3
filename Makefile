@@ -10,7 +10,7 @@ BUILD    := build
 TEST_BIN := $(BUILD)/test_suite
 # Test sources are a single glob (tests/test_*.c) so a new test file is picked up
 # everywhere; only the host-compilable pure modules from src/ are linked.
-TEST_SRC := $(wildcard tests/test_*.c) src/timefmt.c src/layout.c src/calendar.c src/vibes.c src/suntimes.c src/math.c
+TEST_SRC := $(wildcard tests/test_*.c) src/timefmt.c src/layout.c src/calendar.c src/vibes.c src/suntimes.c src/math.c src/complications.c src/settings.c src/locale.c
 
 # emulator platform: basalt | diorite | emery | flint
 EMU  ?= emery
