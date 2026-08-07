@@ -13,7 +13,7 @@ static Layer *s_calendar_layer;
 static void calendar_render(Layer *me, GContext* ctx) {
     (void)me;
     TimelyLayout L = layout_get();
-    const int CAL_WIDTH = L.cal_cell_w, CAL_HEIGHT = L.cal_cell_h, DEVICE_WIDTH = L.statusbar.w;
+    const int CAL_WIDTH = L.cal_cell_w, CAL_HEIGHT = L.cal_cell_h, DEVICE_WIDTH = L.slot_bot.w;
     const int CAL_DAYS = 7, CAL_GAP = 1, CAL_LEFT = 2;
 
     (void)me;

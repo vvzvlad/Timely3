@@ -101,3 +101,59 @@ UTEST(weatherglyph, scales_with_band_and_width) {
   ASSERT_EQ(40, weather_glyph_size_for(200, 55)); // shorter band keeps 40
   ASSERT_EQ(40, weather_glyph_size_for(200, 63)); // just under threshold
 }
+
+// Two-slot / single-slot dynamic-row geometry: even split with a 2px inner
+// gutter (both present) or full-width centered (one present). These reproduce
+// the view's layout_two_slots inline math exactly.
+UTEST(slots, pair_and_full) {
+  // 144 (basalt/diorite): half = 72
+  SlotPair p = layout_slot_pair(144);
+  ASSERT_EQ(2,  p.left.x);  ASSERT_EQ(68, p.left.w);
+  ASSERT_EQ(74, p.right.x); ASSERT_EQ(68, p.right.w);
+  SlotSpan f = layout_slot_full(144);
+  ASSERT_EQ(2, f.x); ASSERT_EQ(140, f.w);
+  // 200 (emery): half = 100
+  p = layout_slot_pair(200);
+  ASSERT_EQ(2,   p.left.x);  ASSERT_EQ(96, p.left.w);
+  ASSERT_EQ(102, p.right.x); ASSERT_EQ(96, p.right.w);
+  f = layout_slot_full(200);
+  ASSERT_EQ(2, f.x); ASSERT_EQ(196, f.w);
+}
+
+// Battery-bar box geometry: reproduces the view's batt_box_geom inline math,
+// including the with_icon narrowing and the 22px status-icon dodge on the
+// right box. Numbers derived from the real code (half = width/2).
+UTEST(battbox, geometry_matches_inline_math) {
+  int bx, bw;
+  // 144, half = 72
+  layout_batt_box(144, false, false, false, &bx, &bw); // left no-icon: 2, 72-10
+  ASSERT_EQ(2, bx);  ASSERT_EQ(62, bw);
+  layout_batt_box(144, true, false, false, &bx, &bw);  // right no-icon: 74, 72-12
+  ASSERT_EQ(74, bx); ASSERT_EQ(60, bw);
+  layout_batt_box(144, false, true, false, &bx, &bw);  // left with-icon: 20, 72-28
+  ASSERT_EQ(20, bx); ASSERT_EQ(44, bw);
+  layout_batt_box(144, true, true, false, &bx, &bw);   // right with-icon: 74, 72-22
+  ASSERT_EQ(74, bx); ASSERT_EQ(50, bw);
+  // right + status icon shown: bx += 22, bw -= 22
+  layout_batt_box(144, true, false, true, &bx, &bw);   // 74+22, 60-22
+  ASSERT_EQ(96, bx); ASSERT_EQ(38, bw);
+  // left is unaffected by the status-icon dodge
+  layout_batt_box(144, false, false, true, &bx, &bw);
+  ASSERT_EQ(2, bx);  ASSERT_EQ(62, bw);
+  // 200, half = 100
+  layout_batt_box(200, true, false, false, &bx, &bw);  // right no-icon: 102, 100-12
+  ASSERT_EQ(102, bx); ASSERT_EQ(88, bw);
+  layout_batt_box(200, false, false, false, &bx, &bw); // left no-icon: 2, 100-10
+  ASSERT_EQ(2, bx);   ASSERT_EQ(90, bw);
+}
+
+// The calendar reads its OWN rectangle's width; every layout rect has .w ==
+// width, so slot_bot.w equals statusbar.w (the fix is honest, not a pixel change).
+UTEST(slots, slot_bot_width_equals_screen_width) {
+  TimelyLayout L = layout_compute(144, 168);
+  ASSERT_EQ(144, L.slot_bot.w);
+  ASSERT_EQ(L.statusbar.w, L.slot_bot.w);
+  L = layout_compute(200, 228);
+  ASSERT_EQ(200, L.slot_bot.w);
+  ASSERT_EQ(L.statusbar.w, L.slot_bot.w);
+}
