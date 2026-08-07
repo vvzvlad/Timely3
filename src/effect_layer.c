@@ -39,7 +39,7 @@ static void effect_layer_update_proc(Layer *me, GContext* ctx) {
   }
   
   // Applying effects
-  for(uint8_t i=0; effect_layer->effects[i] && i<MAX_EFFECTS;++i) effect_layer->effects[i](ctx, layer_frame, effect_layer->params[i]);
+  for (uint8_t i = 0; i < MAX_EFFECTS && effect_layer->effects[i]; ++i) effect_layer->effects[i](ctx, layer_frame, effect_layer->params[i]);
 }  
 
 // create effect layer
