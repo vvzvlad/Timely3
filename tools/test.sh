@@ -3,7 +3,9 @@
 #   1. host unit tests (pure logic: layout, calendar, suntimes, timefmt, vibes,
 #      clock-font selection)
 #   2. pebble build (also generates the per-platform headers)
-#   3. strict-check: full compile of every source per platform with the cloud's
+#   3. reloc-check: no misaligned R_ARM_ABS32 in the built ELFs (an address-valued
+#      initializer in a packed struct makes the app unlaunchable)
+#   4. strict-check: full compile of every source per platform with the cloud's
 #      exact -Werror flag set, failing on any error OR warning
 #
 # Run inside the dev shell:  nix develop -c sh tools/test.sh
@@ -35,6 +37,9 @@ node --test tests/js/
 
 echo "== pebble build =="
 pebble build >/dev/null
+
+echo "== reloc-check (packed-struct relocations) =="
+sh tools/reloc-check.sh
 
 echo "== strict-check (cloud flags) =="
 sh tools/strict-check.sh

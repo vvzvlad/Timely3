@@ -4,7 +4,18 @@
 // User settings + advanced settings. State owned by settings.c; access via
 // settings_get() / adv_settings_get(). Structs are persist-backed.
 
-typedef struct persist { // 18 bytes
+// 25 bytes: 18 x uint8 + 4 reserved bytes @18 + 3 x uint8. Written to / read
+// from flash verbatim, so this byte layout is a compatibility contract with the
+// settings already stored on users' watches: keep every field byte-granular
+// (uint8_t / int8_t / char[]) and NEVER a pointer. A pointer initialised with an
+// address makes the compiler emit an R_ARM_ABS32 relocation into the struct;
+// packed structs have alignment 1, so the linker places them at arbitrary (often
+// odd) addresses and image address = struct base + field offset comes out
+// non-word-aligned. The PebbleOS loader rejects such targets and the app then
+// fails to launch at all - that is what shipped as 0.0.7. No field offset is
+// inherently safe; the misalignment comes from base address + offset together.
+// tools/reloc-check.sh enforces this mechanically against a built ELF.
+typedef struct persist { // 25 bytes
   uint8_t version;                // version key
   uint8_t inverted;               // Invert display
   uint8_t day_invert;             // Invert colors on today's date
@@ -23,11 +34,27 @@ typedef struct persist { // 18 bytes
   uint8_t week_format;            // week format (calculation, e.g. ISO 8601)
   uint8_t vibe_pat_disconnect;    // vibration pattern for disconnect
   uint8_t vibe_pat_connect;       // vibration pattern for connect
-  char *strftime_format;          // custom date_format string (date_format = 255)
+  // Reserved, unused in C. Was `char *strftime_format` — a pointer inside this
+  // packed, flash-persisted struct, i.e. exactly the relocation trap described
+  // above; it is kept as 4 plain bytes so the layout (and every field after it)
+  // is unchanged and stored settings still read back correctly. The live custom
+  // date format is persist_adv_settings.custom_date_fmt (wire key
+  // "strftime_format", appKey 13).
+  uint8_t strftime_format_reserved[4];
   uint8_t track_battery;          // track battery information
   uint8_t theme;                  // color theme id (see theme.h)
   uint8_t theme_mode;             // 0 light, 1 dark, 2 auto (dark at night)
 } __attribute__((__packed__)) persist;
+
+// Layout guards. Now that every field is byte-granular these hold identically on
+// the 32-bit target and in the host test build, so CI evaluates them too (with
+// the old `char *` they could not: sizeof differed between host and target).
+_Static_assert(sizeof(persist) == 25,
+               "persist grew or shrank: a blob persisted by an earlier build is now read with the wrong "
+               "length. Appending a field at the end is the safe case - then update this constant.");
+_Static_assert(offsetof(persist, track_battery) == 22,
+               "persist field moved: a blob persisted by an earlier build would be read field-by-field "
+               "into the wrong members. Do not just re-point this offset - keep the layout.");
 
 // FROZEN LAYOUT. persist_adv_settings sits at 244/256 bytes of Pebble's
 // PERSIST_DATA_MAX_LENGTH — only 12 bytes of headroom remain, past which
