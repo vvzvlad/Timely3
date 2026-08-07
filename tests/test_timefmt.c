@@ -138,6 +138,30 @@ UTEST(datefmt_migrate_v11_to_v12, boundaries) {
   ASSERT_EQ(255, datefmt_migrate_v11_to_v12(255)); // sentinel preserved, NOT 0
 }
 
+// ---- L10: coordinate parser (deduped from Timely.c/theme.c into timefmt.c) ----
+// "[-]int[.frac]" with optional sign; rejects empty/NULL/no-digit input and
+// leaves *out untouched on rejection.
+UTEST(parse_coord, valid_and_edge) {
+  float v;
+
+  v = 123.0f; ASSERT_TRUE(parse_coord("0", &v));        ASSERT_EQ(0, (int)(v * 1000));
+  v = 0.0f;   ASSERT_TRUE(parse_coord("55.75", &v));    ASSERT_EQ(55750, (int)(v * 1000 + 0.5f));
+  v = 0.0f;   ASSERT_TRUE(parse_coord("-37.62", &v));   ASSERT_EQ(-37620, (int)(v * 1000 - 0.5f)); // negative
+  v = 0.0f;   ASSERT_TRUE(parse_coord("+12", &v));      ASSERT_EQ(12000, (int)(v * 1000 + 0.5f));  // explicit plus
+  v = 0.0f;   ASSERT_TRUE(parse_coord("-0.5", &v));     ASSERT_EQ(-500, (int)(v * 1000 - 0.5f));
+  v = 0.0f;   ASSERT_TRUE(parse_coord("90", &v));       ASSERT_EQ(90000, (int)(v * 1000 + 0.5f));
+  v = 0.0f;   ASSERT_TRUE(parse_coord("7.", &v));       ASSERT_EQ(7000, (int)(v * 1000 + 0.5f));   // trailing dot, integer part only
+}
+
+UTEST(parse_coord, rejects_invalid) {
+  float v = 42.0f;
+  ASSERT_FALSE(parse_coord(NULL, &v));   ASSERT_EQ(42, (int)v); // NULL -> untouched
+  ASSERT_FALSE(parse_coord("", &v));     ASSERT_EQ(42, (int)v); // empty
+  ASSERT_FALSE(parse_coord("-", &v));    ASSERT_EQ(42, (int)v); // sign, no digits
+  ASSERT_FALSE(parse_coord(".", &v));    ASSERT_EQ(42, (int)v); // dot, no digits
+  ASSERT_FALSE(parse_coord("abc", &v));  ASSERT_EQ(42, (int)v); // non-numeric
+}
+
 // ---- clamp policy ----
 // Valid-set = localized (<195) | table (195..254) | sentinel 255 == the whole
 // uint8_t domain, so clamp is an identity pass-through today (documented

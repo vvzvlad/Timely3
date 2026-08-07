@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <time.h>
 
 // Sentinel for an offset that has not been received from the JS config yet.
@@ -26,6 +27,12 @@ void format_days_left_in_year(int days_left, char *buf, size_t n);
 // Format a quarter-hour timezone offset as "UTC", e.g. "UTC-5", "UTC+5:30",
 // or "UTC ?" when uninitialized. buf needs >= 11 bytes (16 recommended).
 void format_timezone_offset(int tz_offset, char *buf, size_t n);
+
+// Minimal "[-]int[.frac]" coordinate parser (Pebble libc lacks atof). Parses an
+// optional sign, an integer part, and an optional fractional part into *out.
+// Returns false (and leaves *out untouched) on NULL/empty input or when no digit
+// is present; true otherwise. Canonical copy shared by Timely.c and theme.c.
+bool parse_coord(const char *s, float *out);
 
 // ---- Non-localized date format selection (formerly inline in Timely.c) ----
 // Date format codes: <195 localized (handled by Timely.c), 195..254 the
