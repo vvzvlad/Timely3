@@ -57,11 +57,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v27
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
+      # The flake pins pebble.nix at pebble-tool 5.0.35, but the current SDK
+      # declares "pebble-tool>=5.0.38" and `pebble sdk install latest` aborts at
+      # the extract step. Install the tool from PyPI instead; the SDK brings its
+      # own ARM toolchain. flake.nix remains the local development path.
+      - name: Install pebble-tool
+        run: |
+          pipx install pebble-tool
+          pebble --version
+
+      # binutils-arm-none-eabi provides arm-none-eabi-readelf for reloc-check
+      # and arm-none-eabi-gcc for strict-check.
+      - name: Install ARM toolchain utils
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq binutils-arm-none-eabi gcc-arm-none-eabi
 
       # The SDK is a large download pebble.nix does not provide; cache it across
       # runs keyed on the flake lock so a lockfile bump refetches.
@@ -69,13 +77,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.pebble-sdk
-          key: pebble-sdk-${{ hashFiles('flake.lock') }}
-          restore-keys: pebble-sdk-
+          key: pebble-sdk-${{ runner.os }}-v1
+          restore-keys: pebble-sdk-${{ runner.os }}-
 
       - name: Install Pebble SDK (first run / cache miss)
         run: |
           if [ ! -d "$HOME/.pebble-sdk/SDKs/current" ]; then
-            nix develop --command pebble sdk install latest
+            pebble sdk install latest
           else
             echo "SDK restored from cache"
           fi
@@ -83,7 +91,7 @@ jobs:
       # Real per-platform build (all 4 targets from package.json). Also generates
       # the per-platform headers that strict-check reuses.
       - name: Build (all platforms)
-        run: nix develop --command pebble build
+        run: pebble build
 
       # Guards the misaligned-relocation class that shipped an unlaunchable 0.0.7.
       # Runs only when the script exists so the workflow also passes on refs that
@@ -91,7 +99,7 @@ jobs:
       - name: Relocation alignment check
         run: |
           if [ -f tools/reloc-check.sh ]; then
-            nix develop --command sh tools/reloc-check.sh
+            sh tools/reloc-check.sh
           else
             echo "::warning::tools/reloc-check.sh absent on this ref - skipping"
           fi
@@ -100,4 +108,4 @@ jobs:
       # fails on any error OR warning. A hard gate now that the -Wno-error debt is
       # paid (flake.nix no longer exports -Wno-error).
       - name: Strict per-platform compile (cloud flags)
-        run: nix develop --command sh tools/strict-check.sh
+        run: sh tools/strict-check.sh
