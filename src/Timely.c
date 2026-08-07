@@ -2146,8 +2146,16 @@ static void app_message_init(void) {
 //[INFO    ] D Timely.c:2079 AM Inbox 2044 received
 //  app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "AM Outbox max %lu", app_message_outbox_size_maximum());
 //[INFO    ] D Timely.c:2080 AM Outbox 636 received
-  //app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
-  app_message_open(1280, 512);
+  // Open the inbox at the platform maximum instead of a hardcoded 1280 bytes.
+  // The bulky part of a settings save is the translation strings, which travel
+  // by NAME (trans_* tuples): switching language to Italiano builds a worst-case
+  // AppMessage that overflowed the old 1280-byte inbox, so the whole batch was
+  // silently dropped (issue #4 / audit C4). app_message_inbox_size_maximum()
+  // returns the real ceiling the firmware grants (~2044 bytes here), which holds
+  // the Italiano worst case. The outbox (watch->phone: weather/battery, ~60 bytes)
+  // stays at the original 512 — maxing it too would just hold extra heap on the
+  // tighter platforms (diorite) for no gain; only the inbox overflowed.
+  app_message_open(app_message_inbox_size_maximum(), 512);
 }
 
 

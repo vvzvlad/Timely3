@@ -199,6 +199,12 @@ function buildConfigPage(spec, current) {
   var encName = (encSrc.match(/function\s+([A-Za-z0-9_$]+)/) || [])[1];
   var encInline = encName ? encSrc : ('var encodeN=' + encSrc);
   var encCall = encName || 'encodeN';
+  // Same single-source inline trick for the payload-size estimator (issue #4):
+  // the browser page must run the IDENTICAL byte accounting the node test asserts.
+  var szSrc = wirec.estimateDictSize.toString();
+  var szName = (szSrc.match(/function\s+([A-Za-z0-9_$]+)/) || [])[1];
+  var szInline = szName ? szSrc : ('var estimateDictSize=' + szSrc);
+  var szCall = szName || 'estimateDictSize';
   var script =
     // Read return_to from the full href: data:/file: URIs do not populate
     // location.search, but the emulator appends ?return_to= and the encoded page
@@ -216,6 +222,19 @@ function buildConfigPage(spec, current) {
     // (or anonymises) the top-level `encodeN` can never diverge the definition from
     // the call site below (a silent config-save death). Single source of truth.
     encInline + ';' +
+    // The payload-size estimator (issue #4 / audit C4), inlined identically.
+    szInline + ';' +
+    // BUDGET: the AppMessage inbox size (bytes) the page must stay under. The C
+    // side now opens the inbox at app_message_inbox_size_maximum() (Timely.c),
+    // whose measured value on this hardware was 2044 bytes (see the log comment
+    // there). We hold ~244 bytes (~12%) back for estimate error (JS int width /
+    // firmware framing this cheap model does not capture) and cross-platform
+    // variance, giving 1800. That comfortably clears the Italiano worst case
+    // (~1330 bytes AppMessage), so language switching now succeeds where the old
+    // 1280 inbox dropped it, while still refusing a pathological custom-string
+    // blob. APPROXIMATE: without an on-device measurement per platform this is a
+    // conservative constant, not a proven ceiling (flagged to the orchestrator).
+    'var BUDGET=' + wirec.PAYLOAD_BUDGET + ';' +
     'var LANGS=' + JSON.stringify(LANGS) + ';' +
     // Language selector: resolve the chosen code, fill the (hidden) translation
     // fields from the table, and toggle the Custom editor.
@@ -269,6 +288,18 @@ function buildConfigPage(spec, current) {
     'if(o.strftime_format!=null)send.strftime_format=o.strftime_format;' +
     'if(o.language!=null)send.language=o.language;' +
     'for(var k in o){if(k.indexOf("trans_")===0&&String(o[k])!==String(BASELINE[k]))send[k]=o[k];}' +
+    // Budget guard (issue #4 / audit C4): the bulky trans_* strings travel by
+    // NAME, so a full custom translation set can exceed the watch inbox. Measure
+    // the estimated on-device dict size and, if it is over BUDGET, do NOT send.
+    // Show a VISIBLE, actionable message instead of the old silent overflow that
+    // dropped the whole batch (and left localStorage stale, so retries repeated).
+    // TODO(#4, deferred stage): the robust fix is CHUNKING — ship the translation
+    // strings as a SECOND AppMessage once the first is ACKed. That is a two-message
+    // protocol change (C-side handling of the follow-up message), deliberately
+    // out of scope here; (a) maxed inbox + (b) this visible refusal satisfy the
+    // acceptance ("либо разбит, либо пользователь видит отказ").
+    'var __sz=' + szCall + '(send);' +
+    'if(__sz>BUDGET){alert("These settings are too large to send to the watch ("+__sz+" of "+BUDGET+" bytes).\\n\\nPick a built-in language, or shorten the custom translation strings, then Save again.");return;}' +
     'document.location=RET+encodeURIComponent(JSON.stringify(send));};';
   return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +

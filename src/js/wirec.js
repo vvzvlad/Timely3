@@ -67,8 +67,75 @@ function clampFromSpec(spec) {
   return clamp;
 }
 
+// Estimate the on-device AppMessage inbox size (in bytes) the settings `send`
+// object will occupy, so the config page can REFUSE an oversized save with a
+// visible message instead of overflowing the watch inbox silently (issue #4 /
+// audit C4). This measures the quantity that actually overflowed — the inbox
+// Dictionary the watch must hold — NOT the URL / JSON string length.
+//
+// Flow: the page ships `send = { n:[...numerics...], strftime_format, language,
+// changed trans_* }`; app.js runs decodeN(), which expands `n` into ONE numeric
+// Tuple per wire key and passes every other key through as its own string Tuple,
+// then calls Pebble.sendAppMessage(full). Pebble's dictionary format charges a
+// fixed per-Tuple overhead (key u32 + type u8 + length u16 = 7 bytes) plus the
+// value bytes: 4 for an int, and (UTF-8 byte length + 1 NUL) for a string; a
+// 1-byte tuple count leads the whole dict.
+//
+// This is an ESTIMATE — the exact JS integer width and firmware framing are
+// internal — deliberately biased to slightly OVER-count (ints charged the full
+// 4 bytes) so the budget stays conservative and refuses BEFORE a real overflow.
+// Self-contained (its own nested utf8Len, no module-scope refs) because
+// configpage.js inlines this function's source text into the browser page.
+function estimateDictSize(send) {
+  var TUPLE_OVERHEAD = 7; // Pebble Tuple: key(4) + type(1) + length(2)
+  var INT_BYTES = 4;      // PebbleKit JS sends a plain number as a 4-byte int
+  // UTF-8 byte length of a JS string. Italian translation strings ("Lunedì",
+  // "Mercoledì") are multibyte, and it is BYTES, not chars, the inbox holds.
+  // Hand-rolled (no TextEncoder — absent in the old PebbleKit JS runtime and in
+  // the inlined browser page).
+  function utf8Len(s) {
+    var n = 0;
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c < 0x80) { n += 1; }
+      else if (c < 0x800) { n += 2; }
+      else if (c >= 0xD800 && c <= 0xDBFF) { n += 4; i++; } // surrogate pair -> 4 bytes
+      else { n += 3; }
+    }
+    return n;
+  }
+  var total = 1; // leading tuple-count byte
+  for (var k in send) {
+    if (!Object.prototype.hasOwnProperty.call(send, k)) { continue; }
+    var v = send[k];
+    if (k === 'n' && v && v.length != null) {
+      // The positional numeric array expands to one int Tuple per wire key.
+      total += v.length * (TUPLE_OVERHEAD + INT_BYTES);
+    } else {
+      total += TUPLE_OVERHEAD + utf8Len(String(v)) + 1;
+    }
+  }
+  return total;
+}
+
+// Boolean over-budget decision, node-testable. True when `send` is safe to ship.
+function payloadFits(send, budget) {
+  return estimateDictSize(send) <= budget;
+}
+
 // Guarded CommonJS export: present under node and the PebbleKit bundler, absent
 // (and harmless) when this file's function text is inlined into the browser page.
+// The single source for the payload byte budget (used by configpage.js's page
+// script and the tests). Set BELOW the firmware inbox ceiling (measured ~2044 on
+// the target platforms) with headroom for this cheap estimate's error. A built-in
+// language save is ~1022-1330 B, so it fits; only a pathological custom-string
+// blob is refused.
+var PAYLOAD_BUDGET = 1800;
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { encodeN: encodeN, decodeN: decodeN, clampFromSpec: clampFromSpec };
+  module.exports = {
+    encodeN: encodeN, decodeN: decodeN, clampFromSpec: clampFromSpec,
+    estimateDictSize: estimateDictSize, payloadFits: payloadFits,
+    PAYLOAD_BUDGET: PAYLOAD_BUDGET
+  };
 }
