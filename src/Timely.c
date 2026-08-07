@@ -659,7 +659,21 @@ static GBitmap *stat_slot_icon(uint8_t content) {
   }
 }
 
-static bool is_battery_content(uint8_t c) { return c == 15 || c == 16; }
+// Per-complication behaviour flags — the single source of truth for which slot
+// content id needs a per-second tick and which is a battery reading. Variant B of
+// audit A1: one function the scattered checks route through (the full render/icon
+// table is stage 17).
+#define COMP_NEEDS_SECOND_TICK  (1u << 0)
+#define COMP_IS_BATTERY         (1u << 1)
+
+static uint8_t complication_flags(uint8_t id) {
+  uint8_t f = 0;
+  if (id == 9) { f |= COMP_NEEDS_SECOND_TICK; }       // Seconds
+  if (id == 15 || id == 16) { f |= COMP_IS_BATTERY; } // battery / phone battery
+  return f;
+}
+
+static bool is_battery_content(uint8_t c) { return (complication_flags(c) & COMP_IS_BATTERY) != 0; }
 static bool batt_style_is_bar(uint8_t s) { return s == 0 || s == 3; } // 0 bar, 3 bar+icon
 
 // Whether the charging/DND/hourvibe icon is currently visible; the right
@@ -1623,19 +1637,66 @@ void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed)
   // calendar gets redrawn every time because time_layer is changed and all layers are redrawn together.
 }
 
+// Refresh a single slot's TextLayer iff it currently holds a per-second
+// complication (id 9 = Seconds), routing the decision through complication_flags
+// so the id list lives in one place. Null-safe: a layout that did not create a
+// given layer leaves it NULL, so we must never dereference it (mirrors the null
+// guards in refresh_stat_slots()/apply_center()).
+static void refresh_second_slot(TextLayer *layer, uint8_t content) {
+  if (layer && (complication_flags(content) & COMP_NEEDS_SECOND_TICK)) {
+    update_seconds_text(layer);
+  }
+}
+
 void handle_second_tick(struct tm *tick_time, TimeUnits units_changed)
 {
   *currentTime = *tick_time;
-  // update the seconds layer(s)... (9 == Seconds in the unified slot menu)
-  if (settings_get()->show_week == 9) {
-    update_seconds_text(week_layer);
+  // Every second, refresh each live slot that holds a per-second complication,
+  // using that slot's own TextLayer. Slot->layer mapping mirrors the normal
+  // redraw paths so the second-tick and full-redraw agree.
+  persist *s = settings_get();
+
+  // Above-calendar row: apply_bottom draws it via layout_two_slots(week_layer,
+  // ampm_layer, show_week, show_am_pm, ...) — left slot into week_layer, right into
+  // ampm_layer, but a single set slot is centred into the LEFT layer (week_layer).
+  {
+    uint8_t bl = s->show_week, br = s->show_am_pm;
+    if (bl && br) {
+      refresh_second_slot(week_layer, bl);
+      refresh_second_slot(ampm_layer, br);
+    } else if (bl || br) {
+      refresh_second_slot(week_layer, bl ? bl : br);
+    }
   }
-  if (settings_get()->show_day == 9) {
-    update_seconds_text(day_layer);
+  refresh_second_slot(day_layer, s->show_day);   // legacy standalone full-width slot
+
+  // Center row (above time): layout_two_slots(date_layer, ctr_r_layer, ...) draws
+  // the left slot into date_layer and the right into ctr_r_layer; when only one
+  // center slot is set it is centred into the LEFT layer (date_layer).
+  {
+    uint8_t cl = s->slot_ctr_l, cr = s->slot_ctr_r;
+    if (cl && cr) {
+      refresh_second_slot(date_layer,  cl);
+      refresh_second_slot(ctr_r_layer, cr);
+    } else if (cl || cr) {
+      refresh_second_slot(date_layer, cl ? cl : cr);
+    }
   }
-  if (settings_get()->show_am_pm == 9) {
-    update_seconds_text(ampm_layer);
+
+  // Status bar: refresh_stat_slots() draws two halves as left->text_connection_layer,
+  // right->text_battery_layer, but centres a single non-bar slot into the left
+  // (connection) layer. Mirror that same slot->layer choice here.
+  {
+    uint8_t cl = s->slot_stat_l, cr = s->slot_stat_r;
+    bool single = (cl && !cr) || (!cl && cr);
+    if (single && !batt_style_is_bar(s->batt_style)) {
+      refresh_second_slot(text_connection_layer, cl ? cl : cr);
+    } else {
+      refresh_second_slot(text_connection_layer, cl);
+      refresh_second_slot(text_battery_layer,    cr);
+    }
   }
+
   // redraw everything else if the minute changes...
   if (units_changed & MINUTE_UNIT) {
     handle_minute_tick(tick_time, units_changed);
@@ -1643,8 +1704,18 @@ void handle_second_tick(struct tm *tick_time, TimeUnits units_changed)
 }
 
 static int need_second_tick_handler(void) {
-  // 9 == Seconds in the unified slot menu
-  if ((settings_get()->show_week == 9) || (settings_get()->show_day == 9) || (settings_get()->show_am_pm == 9)) { return 1; }
+  // A per-second tick is needed if ANY of the six live slots (plus the legacy
+  // middle slot) holds a needs-second-tick complication. The id list lives only
+  // in complication_flags().
+  persist *s = settings_get();
+  uint8_t slots[] = {
+    s->show_week, s->show_am_pm, s->show_day, // above-calendar + legacy middle
+    s->slot_stat_l, s->slot_stat_r,           // status bar
+    s->slot_ctr_l,  s->slot_ctr_r,            // center row
+  };
+  for (unsigned i = 0; i < sizeof(slots) / sizeof(slots[0]); i++) {
+    if (complication_flags(slots[i]) & COMP_NEEDS_SECOND_TICK) { return 1; }
+  }
   return 0;
 }
 
