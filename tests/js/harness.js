@@ -36,7 +36,12 @@ function makeHarness() {
     getActiveWatchInfo: function () { return { model: 'qemu' }; }
   };
   global.localStorage = localStorageStub;
-  global.navigator = { language: 'en' };
+  // Node >= 21 exposes `navigator` as a getter-only global, so a plain
+  // assignment throws TypeError and the whole suite fails to load. defineProperty
+  // works on both (CI pins Node 20, local machines are usually newer).
+  Object.defineProperty(global, 'navigator', {
+    value: { language: 'en' }, configurable: true, writable: true,
+  });
   // Some app.js paths reach through window.localStorage / window.navigator.
   global.window = { localStorage: localStorageStub, navigator: global.navigator };
 
